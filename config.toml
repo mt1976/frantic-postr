@@ -1,0 +1,19 @@
+template_image = "./templates/template-2.png"
+output_dir = "./output"
+log_file = "./logs/frantic-postr.log"
+
+[plex]
+base_url = "http://192.168.1.195:32400"
+token = "yooyQkcTthoasndvsQnU"
+
+[font]
+file = "./fonts/Drips.ttf"
+size = 140
+color = "#FFFFFF"
+shadow_color = "#7b8204"
+shadow_offset_x = 2
+shadow_offset_y = 2
+glow_color = "#fbff00"
+glow_radius = 2
+glow_alpha = 0.9
+y_offset = 0
