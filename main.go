@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -131,6 +132,14 @@ type plexSection struct {
 	Type  string `xml:"type,attr"`
 }
 
+type cleanReportRow struct {
+	RatingKey       string
+	TitleBefore     string
+	TitleAfter      string
+	SortTitleBefore string
+	SortTitleAfter  string
+}
+
 type plexCollection struct {
 	RatingKey string `xml:"ratingKey,attr"`
 	Title     string `xml:"title,attr"`
@@ -181,6 +190,9 @@ var (
 	translateRateLimitMu   sync.Mutex
 	nextTranslateRequestAt time.Time
 )
+
+// videoExtRe matches a dot-prefixed video container extension, case-insensitively.
+var videoExtRe = regexp.MustCompile(`(?i)\.(mp4|mov|mpg|mpeg|mkv|avi|wmv|flv|webm|m4v|3gp|ts|vob|rm|rmvb|f4v|divx|xvid)\b`)
 
 type AppLogger struct {
 	console *log.Logger
@@ -626,6 +638,34 @@ func setupLogger(path string) (*AppLogger, func(), error) {
 	}
 	logger.Infof("log file: %s", runLogPath)
 	return logger, func() { _ = f.Close() }, nil
+}
+
+func uniqueCleanReportPath(outputDir string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, "clean", fmt.Sprintf("clean-%s.csv", timestamp))
+}
+
+func writeCleanReport(path string, rows []cleanReportRow) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create clean report dir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create clean report file: %w", err)
+	}
+	defer f.Close()
+	csvField := func(s string) string {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	fmt.Fprintf(f, "%s|%s|%s|%s|%s\n",
+		csvField("RatingKey"), csvField("TitleBefore"), csvField("TitleAfter"),
+		csvField("SortTitleBefore"), csvField("SortTitleAfter"))
+	for _, r := range rows {
+		fmt.Fprintf(f, "%s|%s|%s|%s|%s\n",
+			csvField(r.RatingKey), csvField(r.TitleBefore), csvField(r.TitleAfter),
+			csvField(r.SortTitleBefore), csvField(r.SortTitleAfter))
+	}
+	return nil
 }
 
 func uniqueRunLogPath(path string, now time.Time) string {
@@ -1315,6 +1355,16 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 
 	updated := 0
 	skipped := 0
+	unknownSeq := 0
+	unknownDate := time.Now().Format("20060102")
+	stampUnknown := func(s string) string {
+		if s != "Unknown" {
+			return s
+		}
+		unknownSeq++
+		return fmt.Sprintf("Unknown-%s-%04d", unknownDate, unknownSeq)
+	}
+	var reportRows []cleanReportRow
 	for _, item := range items {
 		if strings.TrimSpace(item.RatingKey) == "" {
 			skipped++
@@ -1341,11 +1391,11 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 				workingTitle = translated
 			}
 		}
-		afterTitle := cleanTitleForSearch(workingTitle, cfg.Clean.Replacements)
+		afterTitle := stampUnknown(cleanTitleForSearch(workingTitle, cfg.Clean.Replacements))
 		updateSortTitle := beforeSortTitle == "" && strings.TrimSpace(workingSortTitle) != ""
 		afterSortTitle := ""
 		if updateSortTitle {
-			afterSortTitle = cleanTitleForSearch(workingSortTitle, cfg.Clean.Replacements)
+			afterSortTitle = stampUnknown(cleanTitleForSearch(workingSortTitle, cfg.Clean.Replacements))
 		}
 		if beforeTitle == afterTitle && (!updateSortTitle || beforeSortTitle == afterSortTitle) {
 			skipped++
@@ -1354,12 +1404,38 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 		if err := updateLibraryItemTitleWithOptionalSort(client, cfg, item.RatingKey, afterTitle, updateSortTitle, afterSortTitle, logger); err != nil {
 			return fmt.Errorf("update clean title ratingKey=%s: %w", item.RatingKey, err)
 		}
+		// If the title resolved to Unknown, add a REVIEW label so the item can be found easily.
+		if strings.HasPrefix(afterTitle, "Unknown-") {
+			reviewLabels, _ := mergeLabels(item.Labels, []string{"REVIEW"})
+			if err := updateLibraryItemLabels(client, cfg, item.RatingKey, reviewLabels, logger); err != nil {
+				logger.Warningf("clean mode: failed to add REVIEW label ratingKey=%s: %v", item.RatingKey, err)
+			} else {
+				logger.Infof("clean mode: REVIEW label added ratingKey=%s", item.RatingKey)
+			}
+		}
 		updated++
+		// Only record rows where the title itself changed.
+		if beforeTitle != afterTitle {
+			reportRows = append(reportRows, cleanReportRow{
+				RatingKey:       item.RatingKey,
+				TitleBefore:     beforeTitle,
+				TitleAfter:      afterTitle,
+				SortTitleBefore: beforeSortTitle,
+				SortTitleAfter:  afterSortTitle,
+			})
+		}
 		if updateSortTitle {
 			logger.Successf("clean mode: title/sort updated ratingKey=%s title_before=%q title_after=%q sort_before=%q sort_after=%q", item.RatingKey, beforeTitle, afterTitle, beforeSortTitle, afterSortTitle)
 		} else {
 			logger.Successf("clean mode: title updated ratingKey=%s before=%q after=%q", item.RatingKey, beforeTitle, afterTitle)
 		}
+	}
+
+	reportPath := uniqueCleanReportPath(cfg.OutputDir, time.Now())
+	if err := writeCleanReport(reportPath, reportRows); err != nil {
+		logger.Warningf("clean mode: failed to write report: %v", err)
+	} else {
+		logger.Infof("clean mode: report written: %s (%d rows)", reportPath, len(reportRows))
 	}
 
 	logger.Successf("clean mode complete: updated=%d skipped=%d", updated, skipped)
@@ -1406,15 +1482,20 @@ func translateLibraryTitles(client *http.Client, cfg Config, sections []plexSect
 
 func cleanTitleForSearch(in string, replacements map[string]string) string {
 	s := strings.TrimSpace(in)
-	if s == "" {
-		return "Unknown"
-	}
+	// Strip video container file extensions before anything else.
+	s = stripVideoExtensions(s)
+	// First pass of custom replacements.
 	s = applyCustomReplacements(s, replacements)
 
 	runes := []rune(s)
 	var b strings.Builder
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
+
+		// Strip emoji and quote characters without emitting a space.
+		if isEmojiRune(r) || isQuoteRune(r) {
+			continue
+		}
 
 		if r == '&' {
 			b.WriteString(" and ")
@@ -1449,11 +1530,43 @@ func cleanTitleForSearch(in string, replacements map[string]string) string {
 	}
 
 	clean := strings.Join(strings.Fields(b.String()), " ")
-	if clean == "" {
-		clean = "Unknown"
-	}
 	clean = strings.ReplaceAll(clean, "NoDOT", "No.")
+	// Second pass of custom replacements so patterns exposed after the char pass are caught.
+	clean = applyCustomReplacements(clean, replacements)
+	clean = strings.Join(strings.Fields(clean), " ")
+	// Empty check is done after all transformations are complete.
+	if clean == "" {
+		return "Unknown"
+	}
 	return uppercaseFirstLetter(clean)
+}
+
+func stripVideoExtensions(s string) string {
+	return videoExtRe.ReplaceAllString(s, "")
+}
+
+// isEmojiRune reports whether r is in a Unicode emoji/symbol block.
+func isEmojiRune(r rune) bool {
+	return (r >= 0x1F300 && r <= 0x1FAFF) || // Misc Symbols & Pictographs through Extended-A
+		(r >= 0x2600 && r <= 0x27BF) || // Misc Symbols, Dingbats
+		(r >= 0xFE00 && r <= 0xFE0F) || // Variation Selectors (emoji presentation)
+		r == 0x200D // Zero Width Joiner (used in emoji sequences)
+}
+
+func isQuoteRune(r rune) bool {
+	switch r {
+	case
+		'\''  ,  '"', '`',         // ASCII: ' " `
+		'\u2018', '\u2019',          // ' '
+		'\u201A', '\u201B',          // ‚ ‛
+		'\u201C', '\u201D',          // " "
+		'\u201E', '\u201F',          // „ ‟
+		'\u2032', '\u2033', '\u2034', '\u2035', // ′ ″ ‴ ‵
+		'\u2039', '\u203A',          // ‹ ›
+		'\u00AB', '\u00BB':          // « »
+		return true
+	}
+	return false
 }
 
 func applyCustomReplacements(in string, replacements map[string]string) string {

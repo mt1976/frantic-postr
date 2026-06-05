@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -712,11 +713,30 @@ func TestCleanTitleForSearch(t *testing.T) {
 		out  string
 	}{
 		{name: "blank to unknown", in: "", out: "Unknown"},
+		{name: "only special chars to unknown", in: "---", out: "Unknown"},
+		{name: "only quotes to unknown", in: `"'"`, out: "Unknown"},
 		{name: "special chars to spaces", in: "hello:world/again", out: "Hello world again"},
 		{name: "ampersand to and", in: "rock & roll", out: "Rock and roll"},
 		{name: "hash number to No.", in: "chapter #12", out: "Chapter No. 12"},
 		{name: "at allowed", in: "name@home", out: "Name@home"},
 		{name: "compress spaces", in: "one   two,,,   three", out: "One two three"},
+		// Quote stripping: all quote types removed without adding a space.
+		{name: "ascii double quotes stripped", in: `"Hello World"`, out: "Hello World"},
+		{name: "ascii single quote stripped", in: "it's here", out: "Its here"},
+		{name: "backtick stripped", in: "`code`", out: "Code"},
+		{name: "curly double quotes stripped", in: "\u201cHello\u201d", out: "Hello"},
+		{name: "curly single quotes stripped", in: "\u2018title\u2019", out: "Title"},
+		{name: "angle quotes stripped", in: "\u00abfilm\u00bb", out: "Film"},
+		// Video extension stripping.
+		{name: "mp4 extension stripped", in: "myvideo.mp4", out: "Myvideo"},
+		{name: "mov extension stripped", in: "clip.mov", out: "Clip"},
+		{name: "mkv extension stripped", in: "show.mkv", out: "Show"},
+		{name: "avi extension stripped", in: "old_file.avi", out: "Old file"},
+		{name: "extension case insensitive", in: "video.MP4", out: "Video"},
+		{name: "extension mid title stripped", in: "cool.mp4 part2", out: "Cool part2"},
+		// Emoji stripping.
+		{name: "emoji stripped", in: "hello \U0001F600 world", out: "Hello world"},
+		{name: "dingbat stripped", in: "star \u2728 title", out: "Star title"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -724,6 +744,19 @@ func TestCleanTitleForSearch(t *testing.T) {
 				t.Fatalf("expected %q got %q", tt.out, got)
 			}
 		})
+	}
+}
+
+func TestCleanTitleForSearchSecondReplacementPass(t *testing.T) {
+	// Verify the second replacement pass catches patterns exposed after the char-clean pass.
+	// "&" is replaced with " and " in the first pass; the surrounding text then forms "rock and roll".
+	// A custom replacement for "rock and roll" (whole phrase after cleaning) should fire in pass 2.
+	replacements := map[string]string{
+		"rock and roll": "RnR",
+	}
+	got := cleanTitleForSearch("rock & roll", replacements)
+	if got != "RnR" {
+		t.Fatalf("expected second replacement pass to catch pattern, got %q", got)
 	}
 }
 
@@ -735,6 +768,66 @@ func TestCleanTitleForSearchWithCustomReplacements(t *testing.T) {
 	got := cleanTitleForSearch("best £ clip cum#2", replacements)
 	if got != "Best gbp clip climax number 2" {
 		t.Fatalf("unexpected cleaned value: %q", got)
+	}
+}
+
+func TestStampUnknown(t *testing.T) {
+	seq := 0
+	date := "20260605"
+	stamp := func(s string) string {
+		if s != "Unknown" {
+			return s
+		}
+		seq++
+		return fmt.Sprintf("Unknown-%s-%04d", date, seq)
+	}
+	if got := stamp("Hello"); got != "Hello" {
+		t.Fatalf("non-unknown should pass through, got %q", got)
+	}
+	if got := stamp("Unknown"); got != "Unknown-20260605-0001" {
+		t.Fatalf("first unknown, got %q", got)
+	}
+	if got := stamp("Unknown"); got != "Unknown-20260605-0002" {
+		t.Fatalf("second unknown, got %q", got)
+	}
+}
+
+func TestUniqueCleanReportPath(t *testing.T) {
+	now := time.Date(2026, time.June, 5, 9, 30, 0, 0, time.UTC)
+	got := uniqueCleanReportPath("output", now)
+	expected := filepath.Join("output", "clean", "clean-20260605-093000.csv")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestWriteCleanReport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "clean", "clean-test.csv")
+	rows := []cleanReportRow{
+		{RatingKey: "1", TitleBefore: "old title", TitleAfter: "Old Title", SortTitleBefore: "", SortTitleAfter: ""},
+		{RatingKey: "2", TitleBefore: `say "hello"`, TitleAfter: "Say hello", SortTitleBefore: "", SortTitleAfter: ""},
+	}
+	if err := writeCleanReport(path, rows); err != nil {
+		t.Fatalf("writeCleanReport error: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("could not read report: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 rows), got %d: %q", len(lines), string(b))
+	}
+	if lines[0] != `"RatingKey"|"TitleBefore"|"TitleAfter"|"SortTitleBefore"|"SortTitleAfter"` {
+		t.Fatalf("unexpected header: %q", lines[0])
+	}
+	if lines[1] != `"1"|"old title"|"Old Title"|""|""` {
+		t.Fatalf("unexpected row 1: %q", lines[1])
+	}
+	// Embedded double-quote in TitleBefore should be escaped as ""
+	if lines[2] != `"2"|"say ""hello"""|"Say hello"|""|""` {
+		t.Fatalf("unexpected row 2: %q", lines[2])
 	}
 }
 
