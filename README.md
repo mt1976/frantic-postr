@@ -13,6 +13,7 @@ go run . -config config.toml
 ```
 
 Library selection memory:
+
 - The last selected library (or library set) is remembered.
 - On next run, selection prompt shows the previous selection as the default.
 - Press Enter to reuse it, or type a new value to replace it.
@@ -46,6 +47,7 @@ go run . -config config.toml -coll-impot -coll-file collections-export.json
 ```
 
 Notes:
+
 - Export/import modes require selecting exactly one library.
 - Existing collections in the target library with the same title are skipped.
 - For smart collections, section references inside filter URIs are rewritten from source library to target library.
@@ -53,6 +55,7 @@ Notes:
 ## Library Clone
 
 Clone mode creates a new Plex library from a selected source library by copying:
+
 - Library path mappings (all source `Location` paths)
 - Core library setup values (type, agent, scanner, language)
 - Library preferences (`/prefs` settings)
@@ -64,11 +67,13 @@ go run . -config config.toml -clone
 ```
 
 Flow:
+
 1. Select one source library.
 2. Enter a new library name when prompted.
 3. Press Enter to accept the default name: `<source-name>-clone`.
 
 Notes:
+
 - Clone mode is exclusive with collection import/export modes.
 - `-upload` is not used in clone mode.
 
@@ -128,6 +133,7 @@ go run . -config config.toml -label
 ```
 
 Behavior:
+
 - Matching is case-insensitive and checks the whole title string using substring matching.
 - Examples that match `abandoned`: `.abanDONED.`, `_abandonedHouse_`.
 - Labels in `-add` are comma-separated.
@@ -135,8 +141,10 @@ Behavior:
 - With `-update-category`, existing category tags are preserved; only missing category tags are added.
 - With `-only-category`, label updates are skipped and only category tags are updated.
 - `-label` requires either:
-	- `-find` with `-add`, or
-	- one or more `[[label.lookup]]` entries in config.
+
+  - `-find` with `-add`, or
+  - one or more `[[label.lookup]]` entries in config.
+
 - If title fields are empty, label matching falls back to media file path text.
 - `-update-category` and `-only-category` only apply to `-label` mode. In other modes, they are ignored and an error is logged.
 
@@ -155,6 +163,7 @@ go run . -config config.toml -translate -clean
 ```
 
 Rules:
+
 - Special characters are replaced with spaces.
 - `@` is preserved.
 - `&` is replaced with `and`.
@@ -164,6 +173,7 @@ Rules:
 - Blank titles become `Unknown`.
 
 Notes:
+
 - Logs include before/after title values for every changed item.
 - Only title is updated; sort title is left unchanged.
 - If title and/or sort title are blank, clean mode seeds the blank field(s) from the media filename (without extension) before cleaning.
@@ -209,6 +219,7 @@ Startup validation is strict: if `plex.base_url` / `plex.token` are missing, or 
 ## Logging And Retries
 
 Logs now include level tags and color output in terminal:
+
 - `INFO`
 - `SUCCESS` (green)
 - `WARNING` (yellow)

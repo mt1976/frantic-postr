@@ -49,12 +49,12 @@ type Config struct {
 		Lookups []labelLookupConfig `toml:"lookup"`
 	} `toml:"label"`
 	Clean struct {
-		Replacements              map[string]string `toml:"replacements"`
-		TranslateToEnglish        bool              `toml:"translate_to_english"`
-		TranslateEndpoint         string            `toml:"translate_endpoint"`
-		TranslateAPIHTTPAddress   string            `toml:"translate_api_http_address"`
-		TranslateAPIKey           string            `toml:"translate_api_key"`
-		TranslateRateLimitPerMinute int            `toml:"translate_rate_limit_per_minute"`
+		Replacements                map[string]string `toml:"replacements"`
+		TranslateToEnglish          bool              `toml:"translate_to_english"`
+		TranslateEndpoint           string            `toml:"translate_endpoint"`
+		TranslateAPIHTTPAddress     string            `toml:"translate_api_http_address"`
+		TranslateAPIKey             string            `toml:"translate_api_key"`
+		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
 	TemplateImage string `toml:"template_image"`
 	OutputDir     string `toml:"output_dir"`
@@ -160,13 +160,13 @@ type plexLabel struct {
 }
 
 type labelLookupConfig struct {
-	TitleContains  string   `toml:"title_contains"`
+	TitleContains    string   `toml:"title_contains"`
 	TitleContainsAny []string `toml:"title_contains_any"`
-	Find           string   `toml:"find"`
-	Labels         []string `toml:"labels"`
-	Categories     []string `toml:"categories"`
-	UpdateCategory bool     `toml:"update_category"`
-	OnlyCategory   bool     `toml:"only_category"`
+	Find             string   `toml:"find"`
+	Labels           []string `toml:"labels"`
+	Categories       []string `toml:"categories"`
+	UpdateCategory   bool     `toml:"update_category"`
+	OnlyCategory     bool     `toml:"only_category"`
 }
 
 type selectionMemory struct {
@@ -175,10 +175,12 @@ type selectionMemory struct {
 
 const selectionMemoryFile = ".frantic-postr-selection.json"
 
-var colorOutputEnabled = true
-var trailModeEnabled = false
-var translateRateLimitMu sync.Mutex
-var nextTranslateRequestAt time.Time
+var (
+	colorOutputEnabled     = true
+	trailModeEnabled       = false
+	translateRateLimitMu   sync.Mutex
+	nextTranslateRequestAt time.Time
+)
 
 type AppLogger struct {
 	console *log.Logger
@@ -191,7 +193,7 @@ func (l *AppLogger) log(level, message string) {
 		l.file.Println(plain)
 	}
 	if l.console != nil {
-		l.console.Println(fmt.Sprintf("%s %s", colorizeLevel(level), message))
+		l.console.Printf("%s %s", colorizeLevel(level), message)
 	}
 }
 
