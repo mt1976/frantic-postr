@@ -5,6 +5,37 @@ log_file = "./frantic-postr.log"
 [plex]
 base_url = "http://127.0.0.1:32400"
 token = "YOUR_PLEX_TOKEN"
+retries = 3
+
+[[label.lookup]]
+title_contains = "abandoned"
+labels = ["urbsex", "abandoned"]
+categories = ["urbsex", "abandoned"]
+update_category = true
+
+[[label.lookup]]
+title_contains = "fisting"
+labels = ["fisting"]
+categories = ["fisting"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Chem", "PnP"]
+labels = ["Chems"]
+categories = ["Chems"]
+update_category = true
+
+[clean.replacements]
+"&" = " and "
+"£" = " gbp "
+"$" = " usd "
+"FULL MOVIE" = " "
+
+[clean]
+translate_api_http_address = "https://libretranslate.com/translate"
+translate_endpoint = "https://libretranslate.com/translate"
+translate_api_key = ""
+translate_rate_limit_per_minute = 10
 
 [font]
 file = ""
