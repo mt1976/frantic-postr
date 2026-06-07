@@ -17,6 +17,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -42,9 +44,12 @@ import (
 
 type Config struct {
 	Plex struct {
-		BaseURL string `toml:"base_url"`
-		Token   string `toml:"token"`
-		Retries int    `toml:"retries"`
+		BaseURL      string `toml:"base_url"`
+		Token        string `toml:"token"`
+		Retries      int    `toml:"retries"`
+		Workers      int    `toml:"workers"`
+		RetryBaseMs  int    `toml:"retry_base_ms"`
+		RetryMaxMs   int    `toml:"retry_max_ms"`
 	} `toml:"plex"`
 	Label struct {
 		Lookups []labelLookupConfig `toml:"lookup"`
@@ -57,10 +62,11 @@ type Config struct {
 		TranslateAPIKey             string            `toml:"translate_api_key"`
 		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
-	TemplateImage string `toml:"template_image"`
-	OutputDir     string `toml:"output_dir"`
-	LogFile       string `toml:"log_file"`
-	Font          struct {
+	TemplateImage   string `toml:"template_image"`
+	OutputDir       string `toml:"output_dir"`
+	LogFile         string `toml:"log_file"`
+	LabelConfigFile string `toml:"label_config"`
+	Font            struct {
 		File          string  `toml:"file"`
 		Size          float64 `toml:"size"`
 		Color         string  `toml:"color"`
@@ -140,6 +146,40 @@ type cleanReportRow struct {
 	SortTitleAfter  string
 }
 
+type cleanItemResult struct {
+	ratingKey       string
+	beforeTitle     string
+	afterTitle      string
+	beforeSortTitle string
+	afterSortTitle  string
+	updateSortTitle bool
+	skipped         bool
+	err             error
+}
+
+type labelItemResult struct {
+	displayTitle      string
+	ratingKey         string
+	labelsUpdated     bool
+	categoriesUpdated bool
+	skipped           bool
+	err               error
+	// before/after snapshots for the report
+	labelsBefore     string
+	labelsAfter      string
+	categoriesBefore string
+	categoriesAfter  string
+}
+
+type labelReportRow struct {
+	RatingKey        string
+	Title            string
+	LabelsBefore     string
+	LabelsAfter      string
+	CategoriesBefore string
+	CategoriesAfter  string
+}
+
 type plexCollection struct {
 	RatingKey string `xml:"ratingKey,attr"`
 	Title     string `xml:"title,attr"`
@@ -166,6 +206,12 @@ type plexPart struct {
 
 type plexLabel struct {
 	Tag string `xml:"tag,attr"`
+}
+
+type LabelConfig struct {
+	Label struct {
+		Lookups []labelLookupConfig `toml:"lookup"`
+	} `toml:"label"`
 }
 
 type labelLookupConfig struct {
@@ -390,26 +436,64 @@ func main() {
 	}
 	if *labelMode {
 		hasCLIArgs := strings.TrimSpace(*labelFind) != "" || len(labelsToAdd) > 0
+
+		// Validate before prompting for a library.
+		if !hasCLIArgs && len(cfg.Label.Lookups) == 0 {
+			logger.Fatal("invalid flags: -label requires either -find with -add or one or more [[label.lookup]] entries in config")
+		}
 		if hasCLIArgs {
 			if strings.TrimSpace(*labelFind) == "" || len(labelsToAdd) == 0 {
 				logger.Fatal("invalid flags: when using -label CLI matching, both -find and -add are required")
 			}
+		}
+
+		// Log the full plan before asking the user to select a library.
+		if hasCLIArgs {
+			logger.Infof("label mode plan: CLI find=%q labels=%v categories=%v update_category=%t only_category=%t",
+				*labelFind, labelsToAdd, labelsToAdd, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode)
+		}
+		for i, lookup := range cfg.Label.Lookups {
+			var finds []string
+			if strings.TrimSpace(lookup.TitleContains) != "" {
+				finds = append(finds, lookup.TitleContains)
+			}
+			finds = append(finds, lookup.TitleContainsAny...)
+			if strings.TrimSpace(lookup.Find) != "" {
+				finds = append(finds, lookup.Find)
+			}
+			logger.Infof("label mode plan: lookup %d/%d finds=%v labels=%v categories=%v update_category=%t only_category=%t",
+				i+1, len(cfg.Label.Lookups), finds, lookup.Labels, lookup.Categories, lookup.UpdateCategory, lookup.OnlyCategory)
+		}
+
+		// Select the library once — not once per lookup.
+		selectedSection, err := selectSingleSection(sections)
+		if err != nil {
+			logger.Fatalf("label mode: library selection failed: %v", err)
+		}
+		logger.Infof("label mode: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+
+		if hasCLIArgs {
 			categoriesToAdd := labelsToAdd
-			if err := labelMatchingItems(client, cfg, sections, []string{*labelFind}, labelsToAdd, categoriesToAdd, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, logger); err != nil {
+			if err := labelMatchingItems(client, cfg, selectedSection, []string{*labelFind}, labelsToAdd, categoriesToAdd, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, logger); err != nil {
 				logger.Fatalf("label mode failed: %v", err)
 			}
 		}
 
 		for i, lookup := range cfg.Label.Lookups {
-			logger.Infof("label mode: running config lookup %d matches=%d labels=%d categories=%d", i+1, len(lookup.TitleContainsAny), len(lookup.Labels), len(lookup.Categories))
-			if err := labelMatchingItems(client, cfg, sections, lookup.TitleContainsAny, lookup.Labels, lookup.Categories, lookup.UpdateCategory, lookup.OnlyCategory, logger); err != nil {
+			var finds []string
+			if strings.TrimSpace(lookup.TitleContains) != "" {
+				finds = append(finds, lookup.TitleContains)
+			}
+			finds = append(finds, lookup.TitleContainsAny...)
+			if strings.TrimSpace(lookup.Find) != "" {
+				finds = append(finds, lookup.Find)
+			}
+			logger.Infof("label mode: running config lookup %d/%d finds=%d labels=%d categories=%d", i+1, len(cfg.Label.Lookups), len(finds), len(lookup.Labels), len(lookup.Categories))
+			if err := labelMatchingItems(client, cfg, selectedSection, finds, lookup.Labels, lookup.Categories, lookup.UpdateCategory, lookup.OnlyCategory, logger); err != nil {
 				logger.Fatalf("label mode lookup %d failed: %v", i+1, err)
 			}
 		}
 
-		if !hasCLIArgs && len(cfg.Label.Lookups) == 0 {
-			logger.Fatal("invalid flags: -label requires either -find with -add or one or more [[label.lookup]] entries in config")
-		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
 	}
@@ -493,6 +577,21 @@ func loadConfig(path string) (Config, error) {
 	if err := toml.Unmarshal(bytes, &cfg); err != nil {
 		return cfg, err
 	}
+	if cfg.LabelConfigFile != "" {
+		labelPath := cfg.LabelConfigFile
+		if !filepath.IsAbs(labelPath) {
+			labelPath = filepath.Join(filepath.Dir(path), labelPath)
+		}
+		labelBytes, err := os.ReadFile(labelPath)
+		if err != nil {
+			return cfg, fmt.Errorf("label_config: %w", err)
+		}
+		var labelCfg LabelConfig
+		if err := toml.Unmarshal(labelBytes, &labelCfg); err != nil {
+			return cfg, fmt.Errorf("label_config: %w", err)
+		}
+		cfg.Label.Lookups = append(cfg.Label.Lookups, labelCfg.Label.Lookups...)
+	}
 	if cfg.OutputDir == "" {
 		cfg.OutputDir = "output"
 	}
@@ -522,6 +621,15 @@ func loadConfig(path string) (Config, error) {
 	}
 	if cfg.Plex.Retries <= 0 {
 		cfg.Plex.Retries = 3
+	}
+	if cfg.Plex.Workers <= 0 {
+		cfg.Plex.Workers = 1
+	}
+	if cfg.Plex.RetryBaseMs <= 0 {
+		cfg.Plex.RetryBaseMs = 500
+	}
+	if cfg.Plex.RetryMaxMs <= 0 {
+		cfg.Plex.RetryMaxMs = 30000
 	}
 	for i := range cfg.Label.Lookups {
 		lookup := &cfg.Label.Lookups[i]
@@ -645,6 +753,36 @@ func uniqueCleanReportPath(outputDir string, now time.Time) string {
 	return filepath.Join(outputDir, "clean", fmt.Sprintf("clean-%s.csv", timestamp))
 }
 
+func uniqueLabelReportPath(outputDir string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, "labels", fmt.Sprintf("labels-%s.csv", timestamp))
+}
+
+func writeLabelReport(path string, rows []labelReportRow) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create label report dir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create label report file: %w", err)
+	}
+	defer f.Close()
+	csvField := func(s string) string {
+		return `"` + strings.ReplaceAll(s, `"`, `""`)+`"`
+	}
+	fmt.Fprintf(f, "%s|%s|%s|%s|%s|%s\n",
+		csvField("RatingKey"), csvField("Title"),
+		csvField("LabelsBefore"), csvField("LabelsAfter"),
+		csvField("CategoriesBefore"), csvField("CategoriesAfter"))
+	for _, r := range rows {
+		fmt.Fprintf(f, "%s|%s|%s|%s|%s|%s\n",
+			csvField(r.RatingKey), csvField(r.Title),
+			csvField(r.LabelsBefore), csvField(r.LabelsAfter),
+			csvField(r.CategoriesBefore), csvField(r.CategoriesAfter))
+	}
+	return nil
+}
+
 func writeCleanReport(path string, rows []cleanReportRow) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create clean report dir: %w", err)
@@ -690,6 +828,9 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: plex.base_url=%s", cfg.Plex.BaseURL)
 	logger.Printf("config: plex.token=*** (len=%d)", len(cfg.Plex.Token))
 	logger.Printf("config: plex.retries=%d", cfg.Plex.Retries)
+	logger.Printf("config: plex.workers=%d", cfg.Plex.Workers)
+	logger.Printf("config: plex.retry_base_ms=%d", cfg.Plex.RetryBaseMs)
+	logger.Printf("config: plex.retry_max_ms=%d", cfg.Plex.RetryMaxMs)
 	logger.Printf("config: label.lookup_count=%d", len(cfg.Label.Lookups))
 	logger.Printf("config: clean.translate_to_english=%t", cfg.Clean.TranslateToEnglish)
 	logger.Printf("config: clean.translate_endpoint=%s", cfg.Clean.TranslateEndpoint)
@@ -712,7 +853,7 @@ func logConfig(logger *AppLogger, cfg Config) {
 func fetchSections(client *http.Client, cfg Config, logger *AppLogger) ([]plexSection, error) {
 	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/sections"
 	logger.APIf("plex call: GET %s", endpoint)
-	respBody, err := doPlexGET(client, endpoint, cfg.Plex.Token, cfg.Plex.Retries, logger)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -727,7 +868,7 @@ func fetchSections(client *http.Client, cfg Config, logger *AppLogger) ([]plexSe
 func fetchCollectionDetails(client *http.Client, cfg Config, ratingKey string, logger *AppLogger) (collectionTransferRecord, error) {
 	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/collections/" + ratingKey
 	logger.APIf("plex call: GET %s", endpoint)
-	respBody, err := doPlexGET(client, endpoint, cfg.Plex.Token, cfg.Plex.Retries, logger)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
 	if err != nil {
 		return collectionTransferRecord{}, err
 	}
@@ -752,7 +893,7 @@ func fetchCollectionDetails(client *http.Client, cfg Config, ratingKey string, l
 func fetchSectionDetail(client *http.Client, cfg Config, sectionKey string, logger *AppLogger) (plexSectionDetail, error) {
 	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/sections/" + sectionKey
 	logger.APIf("plex call: GET %s", endpoint)
-	respBody, err := doPlexGET(client, endpoint, cfg.Plex.Token, cfg.Plex.Retries, logger)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
 	if err != nil {
 		return plexSectionDetail{}, err
 	}
@@ -769,7 +910,7 @@ func fetchSectionDetail(client *http.Client, cfg Config, sectionKey string, logg
 func fetchSectionPreferences(client *http.Client, cfg Config, sectionKey string, logger *AppLogger) ([]plexSectionPref, error) {
 	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/sections/" + sectionKey + "/prefs"
 	logger.APIf("plex call: GET %s", endpoint)
-	respBody, err := doPlexGET(client, endpoint, cfg.Plex.Token, cfg.Plex.Retries, logger)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -783,7 +924,7 @@ func fetchSectionPreferences(client *http.Client, cfg Config, sectionKey string,
 func fetchCollections(client *http.Client, cfg Config, sectionKey string, logger *AppLogger) ([]plexCollection, error) {
 	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/sections/" + sectionKey + "/collections"
 	logger.APIf("plex call: GET %s", endpoint)
-	respBody, err := doPlexGET(client, endpoint, cfg.Plex.Token, cfg.Plex.Retries, logger)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -817,7 +958,7 @@ func fetchSectionItems(client *http.Client, cfg Config, sectionKey string, logge
 		u.RawQuery = q.Encode()
 
 		logger.APIf("plex call: GET %s", endpoint)
-		respBody, err := doPlexGET(client, u.String(), cfg.Plex.Token, cfg.Plex.Retries, logger)
+		respBody, err := doPlexGET(client, u.String(), cfg, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -838,19 +979,19 @@ func fetchSectionItems(client *http.Client, cfg Config, sectionKey string, logge
 	return allItems, nil
 }
 
-func doPlexGET(client *http.Client, endpoint, token string, retries int, logger *AppLogger) ([]byte, error) {
+func doPlexGET(client *http.Client, endpoint string, cfg Config, logger *AppLogger) ([]byte, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	q := u.Query()
-	q.Set("X-Plex-Token", token)
+	q.Set("X-Plex-Token", cfg.Plex.Token)
 	u.RawQuery = q.Encode()
 	if logger != nil {
 		logger.APIf("plex curl: %s", curlCommand("GET", u.String()))
 	}
 
-	resp, err := doRequestWithRetry(client, retries, logger, "GET "+u.String(), func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "GET "+u.String(), func() (*http.Request, error) {
 		return http.NewRequest(http.MethodGet, u.String(), nil)
 	})
 	if err != nil {
@@ -864,7 +1005,23 @@ func doPlexGET(client *http.Client, endpoint, token string, retries int, logger 
 	return io.ReadAll(resp.Body)
 }
 
-func doRequestWithRetry(client *http.Client, retries int, logger *AppLogger, operation string, build func() (*http.Request, error)) (*http.Response, error) {
+// retryBackoff returns the duration to wait before attempt n (0-based).
+// Uses full-jitter exponential backoff: sleep = random(0, min(base*2^n, cap)).
+func retryBackoff(attempt, baseMs, maxMs int) time.Duration {
+	cap := math.Min(float64(maxMs), float64(baseMs)*math.Pow(2, float64(attempt)))
+	// math/rand is fine here — this is not security-sensitive.
+	jitter := cap * randFloat64()
+	return time.Duration(jitter) * time.Millisecond
+}
+
+// randFloat64 is a package-level variable so tests can override it.
+var randFloat64 = func() float64 {
+	// math/rand is fine here — jitter is not security-sensitive.
+	//nolint:gosec
+	return rand.Float64()
+}
+
+func doRequestWithRetry(client *http.Client, retries, baseMs, maxMs int, logger *AppLogger, operation string, build func() (*http.Request, error)) (*http.Response, error) {
 	if retries < 0 {
 		retries = 0
 	}
@@ -880,9 +1037,11 @@ func doRequestWithRetry(client *http.Client, retries int, logger *AppLogger, ope
 		if !isTimeoutError(err) || attempt == retries {
 			return nil, err
 		}
+		delay := retryBackoff(attempt, baseMs, maxMs)
 		if logger != nil {
-			logger.Warningf("%s timed out, retrying (%d/%d): %v", operation, attempt+1, retries, err)
+			logger.Warningf("%s timed out, retry %d/%d in %s: %v", operation, attempt+1, retries, delay.Round(time.Millisecond), err)
 		}
+		time.Sleep(delay)
 	}
 	return nil, fmt.Errorf("request retries exhausted")
 }
@@ -1138,7 +1297,7 @@ func createLibraryFromSection(client *http.Client, cfg Config, sourceDetail plex
 		return plexSection{Key: "trail-clone", Title: newName, Type: sourceDetail.Type}, nil
 	}
 
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "POST "+requestURL, func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "POST "+requestURL, func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPost, requestURL, nil)
 	})
 	if err != nil {
@@ -1249,7 +1408,7 @@ func setSectionPreference(client *http.Client, cfg Config, sectionKey, prefID, p
 		return nil
 	}
 
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "PUT "+u.String(), func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "PUT "+u.String(), func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPut, u.String(), nil)
 	})
 	if err != nil {
@@ -1263,12 +1422,8 @@ func setSectionPreference(client *http.Client, cfg Config, sectionKey, prefID, p
 	return nil
 }
 
-func labelMatchingItems(client *http.Client, cfg Config, sections []plexSection, finds []string, labelsToAdd []string, categoriesToAdd []string, updateCategory bool, onlyCategory bool, logger *AppLogger) error {
-	selectedSection, err := selectSingleSection(sections)
-	if err != nil {
-		return err
-	}
-	logger.Printf("label mode: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+func labelMatchingItems(client *http.Client, cfg Config, selectedSection plexSection, finds []string, labelsToAdd []string, categoriesToAdd []string, updateCategory bool, onlyCategory bool, logger *AppLogger) error {
+	var err error
 	finds, err = normalizeFindList(finds)
 	if err != nil {
 		return fmt.Errorf("invalid find patterns: %w", err)
@@ -1290,12 +1445,18 @@ func labelMatchingItems(client *http.Client, cfg Config, sections []plexSection,
 	if err != nil {
 		return err
 	}
-	logger.Infof("label mode: scanned items=%d", len(items))
+	logger.Infof("label mode: scanned items=%d workers=%d", len(items), cfg.Plex.Workers)
 
-	updatedLabels := 0
-	updatedCategories := 0
-	skipped := 0
+	sem := make(chan struct{}, cfg.Plex.Workers)
+	var wg sync.WaitGroup
+	var resultsMu sync.Mutex
+	var results []labelItemResult
+	var activeWorkers atomic.Int32
+	dispatched := 0
+	totalItems := len(items)
+
 	for _, item := range items {
+		item := item
 		displayTitle := libraryItemTitle(item)
 		matchText := libraryItemMatchText(item)
 		matchedFind, matched := firstMatchedFind(matchText, finds)
@@ -1304,36 +1465,108 @@ func labelMatchingItems(client *http.Client, cfg Config, sections []plexSection,
 		}
 		logger.Matchf("matched title=%q", highlightFindMatches(displayTitle, matchedFind))
 
-		itemChanged := false
-		if !onlyCategory {
-			mergedLabels, labelsChanged := mergeLabels(item.Labels, labelsToAdd)
-			if labelsChanged {
-				if err := updateLibraryItemLabels(client, cfg, item.RatingKey, mergedLabels, logger); err != nil {
-					return fmt.Errorf("update labels for title=%q ratingKey=%s: %w", displayTitle, item.RatingKey, err)
-				}
-				updatedLabels++
-				itemChanged = true
-				logger.Successf("labels added for title=%q ratingKey=%s", displayTitle, item.RatingKey)
-			}
+		dispatched++
+		if dispatched%100 == 0 {
+			logger.Infof("label mode: dispatched=%d/%d workers=%d/%d", dispatched, totalItems, activeWorkers.Load(), cfg.Plex.Workers)
 		}
+		wg.Add(1)
+		sem <- struct{}{}
+		activeWorkers.Add(1)
+		logger.Infof("label mode: worker acquired ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				<-sem
+				activeWorkers.Add(-1)
+				logger.Infof("label mode: worker released ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+			}()
 
-		if updateCategory || onlyCategory {
-			mergedCategories, categoriesChanged := mergeLabels(item.Genres, labelsToAdd)
-			if categoriesChanged {
-				if err := updateLibraryItemCategories(client, cfg, item.RatingKey, mergedCategories, logger); err != nil {
-					return fmt.Errorf("update categories for title=%q ratingKey=%s: %w", displayTitle, item.RatingKey, err)
+			r := labelItemResult{displayTitle: displayTitle, ratingKey: item.RatingKey}
+
+			// Snapshot the before state.
+			r.labelsBefore = joinPlexLabels(item.Labels)
+			r.categoriesBefore = joinPlexLabels(item.Genres)
+
+			if !onlyCategory {
+				mergedLabels, labelsChanged := mergeLabels(item.Labels, labelsToAdd)
+				if labelsChanged {
+					if err := updateLibraryItemLabels(client, cfg, item.RatingKey, mergedLabels, logger); err != nil {
+						r.err = fmt.Errorf("update labels for title=%q ratingKey=%s: %w", displayTitle, item.RatingKey, err)
+						resultsMu.Lock()
+						results = append(results, r)
+						resultsMu.Unlock()
+						return
+					}
+					r.labelsUpdated = true
+					r.labelsAfter = strings.Join(mergedLabels, ", ")
+					logger.Successf("labels added for title=%q ratingKey=%s", displayTitle, item.RatingKey)
 				}
-				updatedCategories++
-				itemChanged = true
-				logger.Successf("categories added for title=%q ratingKey=%s", displayTitle, item.RatingKey)
 			}
-		}
 
-		if !itemChanged {
+			if updateCategory || onlyCategory {
+				mergedCategories, categoriesChanged := mergeLabels(item.Genres, labelsToAdd)
+				if categoriesChanged {
+					if err := updateLibraryItemCategories(client, cfg, item.RatingKey, mergedCategories, logger); err != nil {
+						r.err = fmt.Errorf("update categories for title=%q ratingKey=%s: %w", displayTitle, item.RatingKey, err)
+						resultsMu.Lock()
+						results = append(results, r)
+						resultsMu.Unlock()
+						return
+					}
+					r.categoriesUpdated = true
+					r.categoriesAfter = strings.Join(mergedCategories, ", ")
+					logger.Successf("categories added for title=%q ratingKey=%s", displayTitle, item.RatingKey)
+				}
+			}
+
+			if !r.labelsUpdated && !r.categoriesUpdated {
+				r.skipped = true
+				logger.Warningf("label mode: no changes required title=%q ratingKey=%s", displayTitle, item.RatingKey)
+			}
+			resultsMu.Lock()
+			results = append(results, r)
+			resultsMu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	// Aggregate worker results.
+	updatedLabels := 0
+	updatedCategories := 0
+	skipped := 0
+	var reportRows []labelReportRow
+	for _, r := range results {
+		if r.err != nil {
+			return r.err
+		}
+		if r.skipped {
 			skipped++
-			logger.Warningf("label mode: no changes required title=%q ratingKey=%s", displayTitle, item.RatingKey)
 			continue
 		}
+		if r.labelsUpdated {
+			updatedLabels++
+		}
+		if r.categoriesUpdated {
+			updatedCategories++
+		}
+		// Only include rows where something actually changed.
+		if r.labelsUpdated || r.categoriesUpdated {
+			reportRows = append(reportRows, labelReportRow{
+				RatingKey:        r.ratingKey,
+				Title:            r.displayTitle,
+				LabelsBefore:     r.labelsBefore,
+				LabelsAfter:      r.labelsAfter,
+				CategoriesBefore: r.categoriesBefore,
+				CategoriesAfter:  r.categoriesAfter,
+			})
+		}
+	}
+
+	reportPath := uniqueLabelReportPath(cfg.OutputDir, time.Now())
+	if err := writeLabelReport(reportPath, reportRows); err != nil {
+		logger.Warningf("label mode: failed to write report: %v", err)
+	} else {
+		logger.Infof("label mode: report written: %s (%d rows)", reportPath, len(reportRows))
 	}
 
 	logger.Successf("label mode complete: labels_updated=%d categories_updated=%d skipped=%d", updatedLabels, updatedCategories, skipped)
@@ -1352,82 +1585,142 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 		return err
 	}
 	logger.Infof("clean mode: scanned items=%d", len(items))
+	logger.Infof("clean mode: workers=%d", cfg.Plex.Workers)
 
-	updated := 0
-	skipped := 0
-	unknownSeq := 0
 	unknownDate := time.Now().Format("20060102")
+	var stampMu sync.Mutex
+	unknownSeq := 0
 	stampUnknown := func(s string) string {
 		if s != "Unknown" {
 			return s
 		}
+		stampMu.Lock()
+		defer stampMu.Unlock()
 		unknownSeq++
 		return fmt.Sprintf("Unknown-%s-%04d", unknownDate, unknownSeq)
 	}
-	var reportRows []cleanReportRow
+
+	sem := make(chan struct{}, cfg.Plex.Workers)
+	var wg sync.WaitGroup
+	var resultsMu sync.Mutex
+	var results []cleanItemResult
+	var activeWorkers atomic.Int32
+	dispatched := 0
+	totalItems := len(items)
+
 	for _, item := range items {
+		item := item
 		if strings.TrimSpace(item.RatingKey) == "" {
-			skipped++
+			resultsMu.Lock()
+			results = append(results, cleanItemResult{skipped: true})
+			resultsMu.Unlock()
 			logger.Warningf("clean mode: skipping item with empty rating key")
 			continue
 		}
-		beforeTitle := strings.TrimSpace(item.Title)
-		beforeSortTitle := strings.TrimSpace(item.SortTitle)
-		workingTitle, workingSortTitle := seedCleanTitles(beforeTitle, beforeSortTitle, libraryItemFileStem(item))
-		if workingTitle != beforeTitle {
-			logger.Infof("clean mode: populated blank title from filename ratingKey=%s", item.RatingKey)
+		dispatched++
+		if dispatched%100 == 0 {
+			logger.Infof("clean mode: dispatched=%d/%d workers=%d/%d", dispatched, totalItems, activeWorkers.Load(), cfg.Plex.Workers)
 		}
-		if workingSortTitle != beforeSortTitle && workingSortTitle != "" {
-			if workingSortTitle == workingTitle {
-				logger.Infof("clean mode: populated blank sort title from title ratingKey=%s", item.RatingKey)
+		wg.Add(1)
+		sem <- struct{}{}
+		activeWorkers.Add(1)
+		logger.Infof("clean mode: worker acquired ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+		go func() {
+			defer wg.Done()
+			defer func() {
+				<-sem
+				activeWorkers.Add(-1)
+				logger.Infof("clean mode: worker released ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+			}()
+
+			r := cleanItemResult{ratingKey: item.RatingKey}
+			beforeTitle := strings.TrimSpace(item.Title)
+			beforeSortTitle := strings.TrimSpace(item.SortTitle)
+			workingTitle, workingSortTitle := seedCleanTitles(beforeTitle, beforeSortTitle, libraryItemFileStem(item))
+			if workingTitle != beforeTitle {
+				logger.Infof("clean mode: populated blank title from filename ratingKey=%s", item.RatingKey)
+			}
+			if workingSortTitle != beforeSortTitle && workingSortTitle != "" {
+				if workingSortTitle == workingTitle {
+					logger.Infof("clean mode: populated blank sort title from title ratingKey=%s", item.RatingKey)
+				} else {
+					logger.Infof("clean mode: populated blank sort title from filename ratingKey=%s", item.RatingKey)
+				}
+			}
+			if translateEnabled {
+				translated, detectedLang, translatedOk := maybeTranslateToEnglish(client, cfg, workingTitle, logger)
+				if translatedOk && strings.TrimSpace(translated) != "" {
+					logger.Infof("clean mode: translated title ratingKey=%s lang=%s", item.RatingKey, detectedLang)
+					workingTitle = translated
+				}
+			}
+			afterTitle := stampUnknown(cleanTitleForSearch(workingTitle, cfg.Clean.Replacements))
+			updateSortTitle := beforeSortTitle == "" && strings.TrimSpace(workingSortTitle) != ""
+			afterSortTitle := ""
+			if updateSortTitle {
+				afterSortTitle = stampUnknown(cleanTitleForSearch(workingSortTitle, cfg.Clean.Replacements))
+			}
+			if beforeTitle == afterTitle && (!updateSortTitle || beforeSortTitle == afterSortTitle) {
+				r.skipped = true
+				resultsMu.Lock()
+				results = append(results, r)
+				resultsMu.Unlock()
+				return
+			}
+			if err := updateLibraryItemTitleWithOptionalSort(client, cfg, item.RatingKey, afterTitle, updateSortTitle, afterSortTitle, logger); err != nil {
+				r.err = fmt.Errorf("update clean title ratingKey=%s: %w", item.RatingKey, err)
+				resultsMu.Lock()
+				results = append(results, r)
+				resultsMu.Unlock()
+				return
+			}
+			// If the title resolved to Unknown, add a REVIEW label so the item can be found easily.
+			if strings.HasPrefix(afterTitle, "Unknown-") {
+				reviewLabels, _ := mergeLabels(item.Labels, []string{"REVIEW"})
+				if err := updateLibraryItemLabels(client, cfg, item.RatingKey, reviewLabels, logger); err != nil {
+					logger.Warningf("clean mode: failed to add REVIEW label ratingKey=%s: %v", item.RatingKey, err)
+				} else {
+					logger.Infof("clean mode: REVIEW label added ratingKey=%s", item.RatingKey)
+				}
+			}
+			r.beforeTitle = beforeTitle
+			r.afterTitle = afterTitle
+			r.beforeSortTitle = beforeSortTitle
+			r.afterSortTitle = afterSortTitle
+			r.updateSortTitle = updateSortTitle
+			resultsMu.Lock()
+			results = append(results, r)
+			resultsMu.Unlock()
+			if updateSortTitle {
+				logger.Successf("clean mode: title/sort updated ratingKey=%s title_before=%q title_after=%q sort_before=%q sort_after=%q", item.RatingKey, beforeTitle, afterTitle, beforeSortTitle, afterSortTitle)
 			} else {
-				logger.Infof("clean mode: populated blank sort title from filename ratingKey=%s", item.RatingKey)
+				logger.Successf("clean mode: title updated ratingKey=%s before=%q after=%q", item.RatingKey, beforeTitle, afterTitle)
 			}
+		}()
+	}
+	wg.Wait()
+
+	// Aggregate worker results.
+	updated := 0
+	skipped := 0
+	var reportRows []cleanReportRow
+	for _, r := range results {
+		if r.err != nil {
+			return r.err
 		}
-		if translateEnabled {
-			translated, detectedLang, translatedOk := maybeTranslateToEnglish(client, cfg, workingTitle, logger)
-			if translatedOk && strings.TrimSpace(translated) != "" {
-				logger.Infof("clean mode: translated title ratingKey=%s lang=%s", item.RatingKey, detectedLang)
-				workingTitle = translated
-			}
-		}
-		afterTitle := stampUnknown(cleanTitleForSearch(workingTitle, cfg.Clean.Replacements))
-		updateSortTitle := beforeSortTitle == "" && strings.TrimSpace(workingSortTitle) != ""
-		afterSortTitle := ""
-		if updateSortTitle {
-			afterSortTitle = stampUnknown(cleanTitleForSearch(workingSortTitle, cfg.Clean.Replacements))
-		}
-		if beforeTitle == afterTitle && (!updateSortTitle || beforeSortTitle == afterSortTitle) {
+		if r.skipped {
 			skipped++
 			continue
 		}
-		if err := updateLibraryItemTitleWithOptionalSort(client, cfg, item.RatingKey, afterTitle, updateSortTitle, afterSortTitle, logger); err != nil {
-			return fmt.Errorf("update clean title ratingKey=%s: %w", item.RatingKey, err)
-		}
-		// If the title resolved to Unknown, add a REVIEW label so the item can be found easily.
-		if strings.HasPrefix(afterTitle, "Unknown-") {
-			reviewLabels, _ := mergeLabels(item.Labels, []string{"REVIEW"})
-			if err := updateLibraryItemLabels(client, cfg, item.RatingKey, reviewLabels, logger); err != nil {
-				logger.Warningf("clean mode: failed to add REVIEW label ratingKey=%s: %v", item.RatingKey, err)
-			} else {
-				logger.Infof("clean mode: REVIEW label added ratingKey=%s", item.RatingKey)
-			}
-		}
 		updated++
-		// Only record rows where the title itself changed.
-		if beforeTitle != afterTitle {
+		if r.beforeTitle != r.afterTitle {
 			reportRows = append(reportRows, cleanReportRow{
-				RatingKey:       item.RatingKey,
-				TitleBefore:     beforeTitle,
-				TitleAfter:      afterTitle,
-				SortTitleBefore: beforeSortTitle,
-				SortTitleAfter:  afterSortTitle,
+				RatingKey:       r.ratingKey,
+				TitleBefore:     r.beforeTitle,
+				TitleAfter:      r.afterTitle,
+				SortTitleBefore: r.beforeSortTitle,
+				SortTitleAfter:  r.afterSortTitle,
 			})
-		}
-		if updateSortTitle {
-			logger.Successf("clean mode: title/sort updated ratingKey=%s title_before=%q title_after=%q sort_before=%q sort_after=%q", item.RatingKey, beforeTitle, afterTitle, beforeSortTitle, afterSortTitle)
-		} else {
-			logger.Successf("clean mode: title updated ratingKey=%s before=%q after=%q", item.RatingKey, beforeTitle, afterTitle)
 		}
 	}
 
@@ -1673,7 +1966,7 @@ func translateTextToEnglish(client *http.Client, cfg Config, text string, logger
 		logger.APIf("translate call: POST %s", endpoint)
 	}
 
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "POST "+endpoint, func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "POST "+endpoint, func() (*http.Request, error) {
 		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(bytesBody))
 		if err != nil {
 			return nil, err
@@ -1916,6 +2209,16 @@ func libraryItemFileStem(item plexLibraryItem) string {
 	return ""
 }
 
+func joinPlexLabels(labels []plexLabel) string {
+	parts := make([]string, 0, len(labels))
+	for _, l := range labels {
+		if t := strings.TrimSpace(l.Tag); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
 func mergeLabels(existing []plexLabel, toAdd []string) ([]string, bool) {
 	merged := make([]string, 0, len(existing)+len(toAdd))
 	seen := map[string]struct{}{}
@@ -1981,7 +2284,7 @@ func updateLibraryItemLabels(client *http.Client, cfg Config, ratingKey string, 
 	if shouldSkipPlexWrite(logger, "update item labels", requestURL) {
 		return nil
 	}
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "PUT "+requestURL, func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "PUT "+requestURL, func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPut, requestURL, nil)
 	})
 	if err != nil {
@@ -2028,7 +2331,7 @@ func updateLibraryItemCategories(client *http.Client, cfg Config, ratingKey stri
 	if shouldSkipPlexWrite(logger, "update item categories", requestURL) {
 		return nil
 	}
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "PUT "+requestURL, func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "PUT "+requestURL, func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPut, requestURL, nil)
 	})
 	if err != nil {
@@ -2087,7 +2390,7 @@ func updateLibraryItemTitleWithOptionalSort(client *http.Client, cfg Config, rat
 	if shouldSkipPlexWrite(logger, "update item title", requestURL) {
 		return nil
 	}
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "PUT "+requestURL, func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "PUT "+requestURL, func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPut, requestURL, nil)
 	})
 	if err != nil {
@@ -2248,7 +2551,7 @@ func createCollection(client *http.Client, cfg Config, sourceSectionKey, targetS
 		return nil
 	}
 
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "POST "+u.String(), func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "POST "+u.String(), func() (*http.Request, error) {
 		return http.NewRequest(http.MethodPost, u.String(), nil)
 	})
 	if err != nil {
@@ -2377,7 +2680,7 @@ func uploadCollectionPoster(client *http.Client, cfg Config, collection plexColl
 	q.Set("X-Plex-Token", cfg.Plex.Token)
 	u.RawQuery = q.Encode()
 
-	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, logger, "POST "+u.String(), func() (*http.Request, error) {
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "POST "+u.String(), func() (*http.Request, error) {
 		req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(body.Bytes()))
 		if err != nil {
 			return nil, err

@@ -1,78 +1,17 @@
 template_image = "./templates/template-2.png"
 output_dir = "./output"
 log_file = "./logs/frantic-postr.log"
+label_config = "./labels.toml"
 
 [plex]
 base_url = "http://192.168.1.195:32400"
 token = "yooyQkcTthoasndvsQnU"
 retries = 3
-
-[[label.lookup]]
-title_contains = "abandoned"
-labels = ["urbsex", "abandoned"]
-categories = ["urbsex", "abandoned"]
-update_category = true
-
-[[label.lookup]]
-title_contains = "fisting"
-labels = ["fisting"]
-categories = ["fisting"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Chem", "PnP"]
-labels = ["Chems"]
-categories = ["Chems"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Leather", "Rubber", "Latex"]
-labels = ["Kink"]
-categories = ["Kink"]
-update_category = true
+workers = 5
+retry_base_ms = 500
+retry_max_ms = 30000
 
 
-[[label.lookup]]
-title_contains_any = ["Piss", "Peee", "Pee ", " Pee", "Pee-"]
-labels = ["Piss"]
-categories = ["Piss"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["eStim", "E-stim", "E Stim", "E-Stim", "Electro", "Electrosex"]
-labels = ["Electro","eStim"]
-categories = ["Electro","eStim"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Fuck", "Fucking", "Fucked", "Fucks", "Fucker", "Fuckers","Frick", "Fricking", "Fricked", "Fricks", "Fricker", "Frickers"]
-labels = ["Fucking"]
-categories = ["Fucking"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Bareback", "BB", "Raw", "Rawsex"]
-labels = ["Bareback"]
-categories = ["Bareback"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Poz", "Pozz", "Pozzy", "Poz ", " Poz", "Poz-","Toxic", "Tox", "Toxx", "Tox ", " Tox", "Tox-"]
-labels = ["Poz"]
-categories = ["Poz"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Smoke", "Smok", "Smoky", "Smokey","Cigarette", "Cigarette", "Cig","Ciggy", "Ciggies","Cigar", "Cigars","Stoggy", "Stoggie", "Stoggies"]
-labels = ["Cigars","Smoking"]
-categories = ["Cigars","Smoking"]
-update_category = true
-
-[[label.lookup]]
-title_contains_any = ["Mud", "Mudding", "Mud ", " Mud", "Mud-","Mucky", "Muck", "Mucky", "Muck ", " Muck", "Muck-","Gunge", "Gungey", "Gunge", "Gunge ", " Gunge", "Gunge-","Slime", "Slimy", "Slime ", " Slime", "Slime-","Sludge", "Sludgy", "Sludge ", " Sludge", "Sludge-","WAM", "WAMmy", "WAM ", " WAM", "WAM-","Mess", "Messy", "Mess ", " Mess", "Mess-"]
-labels = ["WAM","Mucky"]
-categories = ["WAM","Mucky"]
-update_category = true
 
 [clean.replacements]
 "&" = " and "

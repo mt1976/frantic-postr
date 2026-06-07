@@ -84,6 +84,42 @@ func TestRenderCollectionPosterCreatesOutput(t *testing.T) {
 	}
 }
 
+func TestRetryBackoff(t *testing.T) {
+	// Pin jitter to 1.0 so the result equals the cap exactly — deterministic.
+	orig := randFloat64
+	randFloat64 = func() float64 { return 1.0 }
+	defer func() { randFloat64 = orig }()
+
+	tests := []struct {
+		attempt    int
+		baseMs     int
+		maxMs      int
+		wantExact  time.Duration // with jitter=1.0, result == cap * 1ms
+	}{
+		// attempt 0: cap = min(30000, 500*2^0) = 500ms
+		{0, 500, 30000, 500 * time.Millisecond},
+		// attempt 1: cap = min(30000, 500*2^1) = 1000ms
+		{1, 500, 30000, 1000 * time.Millisecond},
+		// attempt 2: cap = min(30000, 500*2^2) = 2000ms
+		{2, 500, 30000, 2000 * time.Millisecond},
+		// attempt 10: cap = min(30000, 500*1024) = 30000ms (capped)
+		{10, 500, 30000, 30000 * time.Millisecond},
+	}
+	for _, tt := range tests {
+		got := retryBackoff(tt.attempt, tt.baseMs, tt.maxMs)
+		if got != tt.wantExact {
+			t.Errorf("retryBackoff(attempt=%d, base=%d, max=%d) = %v, want %v",
+				tt.attempt, tt.baseMs, tt.maxMs, got, tt.wantExact)
+		}
+	}
+
+	// With jitter=0.0 the result should always be 0.
+	randFloat64 = func() float64 { return 0.0 }
+	if got := retryBackoff(5, 500, 30000); got != 0 {
+		t.Errorf("with jitter=0, expected 0, got %v", got)
+	}
+}
+
 func TestUniqueRunLogPathAddsTimestampBeforeExtension(t *testing.T) {
 	now := time.Date(2026, time.June, 3, 14, 5, 6, 0, time.UTC)
 	got := uniqueRunLogPath(filepath.Join("logs", "frantic-postr.log"), now)
@@ -105,7 +141,14 @@ func TestDoPlexGETLogsRunnableCurlCommand(t *testing.T) {
 	var buf bytes.Buffer
 	logger := newTestLogger(&buf, io.Discard)
 
-	if _, err := doPlexGET(server.Client(), server.URL+"/library/sections", "secret-token", 3, logger); err != nil {
+	if _, err := doPlexGET(server.Client(), server.URL+"/library/sections", Config{Plex: struct {
+		BaseURL     string `toml:"base_url"`
+		Token       string `toml:"token"`
+		Retries     int    `toml:"retries"`
+		Workers     int    `toml:"workers"`
+		RetryBaseMs int    `toml:"retry_base_ms"`
+		RetryMaxMs  int    `toml:"retry_max_ms"`
+	}{Token: "secret-token", Retries: 3, RetryBaseMs: 500, RetryMaxMs: 30000}}, logger); err != nil {
 		t.Fatalf("doPlexGET failed: %v", err)
 	}
 
@@ -828,6 +871,74 @@ func TestWriteCleanReport(t *testing.T) {
 	// Embedded double-quote in TitleBefore should be escaped as ""
 	if lines[2] != `"2"|"say ""hello"""|"Say hello"|""|""` {
 		t.Fatalf("unexpected row 2: %q", lines[2])
+	}
+}
+
+func TestUniqueLabelReportPath(t *testing.T) {
+	now := time.Date(2026, time.June, 6, 10, 0, 0, 0, time.UTC)
+	got := uniqueLabelReportPath("output", now)
+	expected := filepath.Join("output", "labels", "labels-20260606-100000.csv")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestWriteLabelReport(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "labels", "labels-test.csv")
+	rows := []labelReportRow{
+		{
+			RatingKey:        "1",
+			Title:            "My Film",
+			LabelsBefore:     "Action",
+			LabelsAfter:      "Action, Drama",
+			CategoriesBefore: "",
+			CategoriesAfter:  "Drama",
+		},
+		{
+			RatingKey:        "2",
+			Title:            `Film "Two"`,
+			LabelsBefore:     "",
+			LabelsAfter:      "Horror",
+			CategoriesBefore: "",
+			CategoriesAfter:  "",
+		},
+	}
+	if err := writeLabelReport(path, rows); err != nil {
+		t.Fatalf("writeLabelReport error: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("could not read report: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 rows), got %d:\n%s", len(lines), string(b))
+	}
+	wantHeader := `"RatingKey"|"Title"|"LabelsBefore"|"LabelsAfter"|"CategoriesBefore"|"CategoriesAfter"`
+	if lines[0] != wantHeader {
+		t.Fatalf("unexpected header:\n got  %q\n want %q", lines[0], wantHeader)
+	}
+	wantRow1 := `"1"|"My Film"|"Action"|"Action, Drama"|""|"Drama"`
+	if lines[1] != wantRow1 {
+		t.Fatalf("unexpected row 1:\n got  %q\n want %q", lines[1], wantRow1)
+	}
+	// Embedded double-quote must be escaped as ""
+	wantRow2 := `"2"|"Film ""Two"""|""|"Horror"|""|""`
+	if lines[2] != wantRow2 {
+		t.Fatalf("unexpected row 2:\n got  %q\n want %q", lines[2], wantRow2)
+	}
+}
+
+func TestJoinPlexLabels(t *testing.T) {
+	labels := []plexLabel{{Tag: "Action"}, {Tag: " Drama "}, {Tag: ""}, {Tag: "Horror"}}
+	got := joinPlexLabels(labels)
+	want := "Action, Drama, Horror"
+	if got != want {
+		t.Fatalf("expected %q got %q", want, got)
+	}
+	if joinPlexLabels(nil) != "" {
+		t.Fatalf("expected empty string for nil labels")
 	}
 }
 
