@@ -44,16 +44,19 @@ import (
 
 type Config struct {
 	Plex struct {
-		BaseURL      string `toml:"base_url"`
-		Token        string `toml:"token"`
-		Retries      int    `toml:"retries"`
-		Workers      int    `toml:"workers"`
-		RetryBaseMs  int    `toml:"retry_base_ms"`
-		RetryMaxMs   int    `toml:"retry_max_ms"`
+		BaseURL     string `toml:"base_url"`
+		Token       string `toml:"token"`
+		Retries     int    `toml:"retries"`
+		Workers     int    `toml:"workers"`
+		RetryBaseMs int    `toml:"retry_base_ms"`
+		RetryMaxMs  int    `toml:"retry_max_ms"`
 	} `toml:"plex"`
 	Label struct {
 		Lookups []labelLookupConfig `toml:"lookup"`
 	} `toml:"label"`
+	Collection struct {
+		Lookups []collectionLookupConfig `toml:"lookup"`
+	} `toml:"collection"`
 	Clean struct {
 		Replacements                map[string]string `toml:"replacements"`
 		TranslateToEnglish          bool              `toml:"translate_to_english"`
@@ -62,11 +65,13 @@ type Config struct {
 		TranslateAPIKey             string            `toml:"translate_api_key"`
 		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
-	TemplateImage   string `toml:"template_image"`
-	OutputDir       string `toml:"output_dir"`
-	LogFile         string `toml:"log_file"`
-	LabelConfigFile string `toml:"label_config"`
-	Font            struct {
+	TemplateImage        string `toml:"template_image"`
+	OutputDir            string `toml:"output_dir"`
+	LogFile              string `toml:"log_file"`
+	LabelConfigFile      string `toml:"label_config"`
+	CollectionConfigFile string `toml:"collection_config"`
+	CollectionBaseURI    string `toml:"-"`
+	Font                 struct {
 		File          string  `toml:"file"`
 		Size          float64 `toml:"size"`
 		Color         string  `toml:"color"`
@@ -214,6 +219,13 @@ type LabelConfig struct {
 	} `toml:"label"`
 }
 
+type CollectionConfig struct {
+	BaseURI    string `toml:"base_uri"`
+	Collection struct {
+		Lookups []collectionLookupConfig `toml:"lookup"`
+	} `toml:"collection"`
+}
+
 type labelLookupConfig struct {
 	TitleContains    string   `toml:"title_contains"`
 	TitleContainsAny []string `toml:"title_contains_any"`
@@ -222,6 +234,12 @@ type labelLookupConfig struct {
 	Categories       []string `toml:"categories"`
 	UpdateCategory   bool     `toml:"update_category"`
 	OnlyCategory     bool     `toml:"only_category"`
+}
+
+type collectionLookupConfig struct {
+	Title   string `toml:"title"`
+	Smart   bool   `toml:"smart"`
+	Content string `toml:"content"`
 }
 
 type selectionMemory struct {
@@ -239,6 +257,8 @@ var (
 
 // videoExtRe matches a dot-prefixed video container extension, case-insensitively.
 var videoExtRe = regexp.MustCompile(`(?i)\.(mp4|mov|mpg|mpeg|mkv|avi|wmv|flv|webm|m4v|3gp|ts|vob|rm|rmvb|f4v|divx|xvid)\b`)
+
+var collectionSectionKeyRe = regexp.MustCompile(`(?:/library/sections/|%2Flibrary%2Fsections%2F|%2flibrary%2fsections%2f)([0-9]+)(?:/|%2F|%2f)`)
 
 type AppLogger struct {
 	console *log.Logger
@@ -344,6 +364,7 @@ func main() {
 	collImpot := flag.Bool("coll-impot", false, "Alias for -coll-import")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
 	labelMode := flag.Bool("label", false, "Scan a selected library and add labels to items with titles matching -find")
+	colInject := flag.Bool("col-inject", false, "Inject smart collections from collections.toml into a selected library")
 	updateCategoryMode := flag.Bool("update-category", false, "When used with -label, also add values from -add to item category tags")
 	onlyCategoryMode := flag.Bool("only-category", false, "When used with -label, update only category tags from -add and skip label updates")
 	cleanMode := flag.Bool("clean", false, "Clean titles in a selected library by removing unsafe characters")
@@ -375,6 +396,9 @@ func main() {
 	if *labelMode {
 		modeCount++
 	}
+	if *colInject {
+		modeCount++
+	}
 	if *cleanMode {
 		modeCount++
 	}
@@ -382,12 +406,12 @@ func main() {
 		modeCount++
 	}
 	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -coll-export, -coll-import/-coll-impot, -clone, -label, -clean, -translate")
+		log.Fatal("invalid flags: use only one mode among -coll-export, -coll-import/-coll-impot, -clone, -label, -col-inject, -clean, -translate")
 	}
-	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode) {
+	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *colInject) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
 	}
-	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *cleanMode || translateOnlyMode) && *upload {
+	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *colInject || *cleanMode || translateOnlyMode) && *upload {
 		log.Fatal("invalid flags: -upload is not used with clone/import/export modes")
 	}
 	labelsToAdd, err := parseLabelList(*labelAdd)
@@ -417,7 +441,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t trail=%t upload=%t clone=%t label=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, trailModeEnabled, *upload, *cloneLibraryMode, *labelMode, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
+	logger.Printf("config: no_color=%t trail=%t upload=%t clone=%t label=%t col_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, trailModeEnabled, *upload, *cloneLibraryMode, *labelMode, *colInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	sections, err := fetchSections(client, cfg, logger)
@@ -494,6 +518,13 @@ func main() {
 			}
 		}
 
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *colInject {
+		if err := injectCollections(client, cfg, sections, logger); err != nil {
+			logger.Fatalf("collection inject failed: %v", err)
+		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
 	}
@@ -578,19 +609,20 @@ func loadConfig(path string) (Config, error) {
 		return cfg, err
 	}
 	if cfg.LabelConfigFile != "" {
-		labelPath := cfg.LabelConfigFile
-		if !filepath.IsAbs(labelPath) {
-			labelPath = filepath.Join(filepath.Dir(path), labelPath)
-		}
-		labelBytes, err := os.ReadFile(labelPath)
-		if err != nil {
-			return cfg, fmt.Errorf("label_config: %w", err)
-		}
 		var labelCfg LabelConfig
-		if err := toml.Unmarshal(labelBytes, &labelCfg); err != nil {
-			return cfg, fmt.Errorf("label_config: %w", err)
+		if err := loadSupplementalConfig(path, cfg.LabelConfigFile, "label_config", &labelCfg); err != nil {
+			return cfg, err
 		}
 		cfg.Label.Lookups = append(cfg.Label.Lookups, labelCfg.Label.Lookups...)
+	}
+	if cfg.CollectionConfigFile != "" {
+		var collectionCfg CollectionConfig
+		if err := loadSupplementalConfig(path, cfg.CollectionConfigFile, "collection_config", &collectionCfg); err != nil {
+			return cfg, err
+		}
+		collectionCfg.BaseURI = strings.TrimSpace(collectionCfg.BaseURI)
+		cfg.Collection.Lookups = append(cfg.Collection.Lookups, collectionCfg.Collection.Lookups...)
+		cfg.CollectionBaseURI = collectionCfg.BaseURI
 	}
 	if cfg.OutputDir == "" {
 		cfg.OutputDir = "output"
@@ -671,6 +703,21 @@ func loadConfig(path string) (Config, error) {
 			return cfg, fmt.Errorf("label.lookup[%d]: at least one label or category is required", i)
 		}
 	}
+	for i := range cfg.Collection.Lookups {
+		lookup := &cfg.Collection.Lookups[i]
+		lookup.Title = strings.TrimSpace(lookup.Title)
+		lookup.Content = strings.TrimSpace(lookup.Content)
+		if lookup.Title == "" {
+			return cfg, fmt.Errorf("collection.lookup[%d]: title is required", i)
+		}
+		if lookup.Content != "" {
+			lookup.Smart = true
+		}
+		if lookup.Smart && lookup.Content == "" {
+			return cfg, fmt.Errorf("collection.lookup[%d]: smart collections require content", i)
+		}
+		lookup.Content = normalizeCollectionLookupContent(lookup.Content)
+	}
 	if strings.TrimSpace(cfg.Clean.TranslateAPIHTTPAddress) != "" {
 		cfg.Clean.TranslateEndpoint = cfg.Clean.TranslateAPIHTTPAddress
 	}
@@ -704,6 +751,24 @@ func loadConfig(path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func loadSupplementalConfig(basePath, supplementalPath, fieldName string, target any) error {
+	if strings.TrimSpace(supplementalPath) == "" {
+		return nil
+	}
+	resolvedPath := supplementalPath
+	if !filepath.IsAbs(resolvedPath) {
+		resolvedPath = filepath.Join(filepath.Dir(basePath), resolvedPath)
+	}
+	bytes, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", fieldName, err)
+	}
+	if err := toml.Unmarshal(bytes, target); err != nil {
+		return fmt.Errorf("%s: %w", fieldName, err)
+	}
+	return nil
 }
 
 func requireFileExists(name, path string) error {
@@ -768,7 +833,7 @@ func writeLabelReport(path string, rows []labelReportRow) error {
 	}
 	defer f.Close()
 	csvField := func(s string) string {
-		return `"` + strings.ReplaceAll(s, `"`, `""`)+`"`
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 	}
 	fmt.Fprintf(f, "%s|%s|%s|%s|%s|%s\n",
 		csvField("RatingKey"), csvField("Title"),
@@ -831,7 +896,11 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: plex.workers=%d", cfg.Plex.Workers)
 	logger.Printf("config: plex.retry_base_ms=%d", cfg.Plex.RetryBaseMs)
 	logger.Printf("config: plex.retry_max_ms=%d", cfg.Plex.RetryMaxMs)
+	logger.Printf("config: label_config=%s", cfg.LabelConfigFile)
 	logger.Printf("config: label.lookup_count=%d", len(cfg.Label.Lookups))
+	logger.Printf("config: collection_config=%s", cfg.CollectionConfigFile)
+	logger.Printf("config: collection_base_uri=%s", cfg.CollectionBaseURI)
+	logger.Printf("config: collection.lookup_count=%d", len(cfg.Collection.Lookups))
 	logger.Printf("config: clean.translate_to_english=%t", cfg.Clean.TranslateToEnglish)
 	logger.Printf("config: clean.translate_endpoint=%s", cfg.Clean.TranslateEndpoint)
 	logger.Printf("config: clean.translate_rate_limit_per_minute=%d", cfg.Clean.TranslateRateLimitPerMinute)
@@ -1849,14 +1918,14 @@ func isEmojiRune(r rune) bool {
 func isQuoteRune(r rune) bool {
 	switch r {
 	case
-		'\''  ,  '"', '`',         // ASCII: ' " `
-		'\u2018', '\u2019',          // ' '
-		'\u201A', '\u201B',          // ‚ ‛
-		'\u201C', '\u201D',          // " "
-		'\u201E', '\u201F',          // „ ‟
+		'\'', '"', '`', // ASCII: ' " `
+		'\u2018', '\u2019', // ' '
+		'\u201A', '\u201B', // ‚ ‛
+		'\u201C', '\u201D', // " "
+		'\u201E', '\u201F', // „ ‟
 		'\u2032', '\u2033', '\u2034', '\u2035', // ′ ″ ‴ ‵
-		'\u2039', '\u203A',          // ‹ ›
-		'\u00AB', '\u00BB':          // « »
+		'\u2039', '\u203A', // ‹ ›
+		'\u00AB', '\u00BB': // « »
 		return true
 	}
 	return false
@@ -2534,7 +2603,7 @@ func createCollection(client *http.Client, cfg Config, sourceSectionKey, targetS
 			return errors.New("smart collection has no filter content")
 		}
 		q.Set("smart", "1")
-		q.Set("uri", rewriteCollectionContentURI(collection.Content, sourceSectionKey, targetSectionKey))
+		q.Set("uri", resolveCollectionContentURI(collection.Content, sourceSectionKey, targetSectionKey))
 	} else {
 		q.Set("smart", "0")
 	}
@@ -2567,6 +2636,110 @@ func createCollection(client *http.Client, cfg Config, sourceSectionKey, targetS
 		logger.Successf("collection created: title=%q smart=%t", title, collection.Smart)
 	}
 	return nil
+}
+
+func injectCollections(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
+	if len(cfg.Collection.Lookups) == 0 {
+		return errors.New("invalid flags: -col-inject requires one or more [[collection.lookup]] entries in collections.toml")
+	}
+
+	targetSection, err := selectSingleSection(sections)
+	if err != nil {
+		return err
+	}
+	logger.Printf("collection inject: target library=%s (%s)", targetSection.Title, targetSection.Key)
+
+	targetTypeCode, err := sectionTypeToPlexTypeCode(targetSection.Type)
+	if err != nil {
+		return err
+	}
+
+	existing, err := fetchCollections(client, cfg, targetSection.Key, logger)
+	if err != nil {
+		return err
+	}
+	existingByTitle := make(map[string]struct{}, len(existing))
+	for _, collection := range existing {
+		existingByTitle[strings.ToLower(collection.Title)] = struct{}{}
+	}
+
+	created := 0
+	skipped := 0
+	for i, lookup := range cfg.Collection.Lookups {
+		title := normalizeCollectionName(lookup.Title)
+		if title == "" {
+			title = "untitled"
+		}
+		if _, ok := existingByTitle[strings.ToLower(title)]; ok {
+			skipped++
+			logger.Printf("collection inject: skip existing title=%q", title)
+			continue
+		}
+
+		content := composeCollectionContent(cfg.CollectionBaseURI, lookup.Content)
+		record := collectionTransferRecord{Title: title, Smart: lookup.Smart, Content: content}
+		if strings.TrimSpace(record.Content) != "" {
+			record.Smart = true
+		}
+		if err := createCollection(client, cfg, "", targetSection.Key, title, targetTypeCode, record, logger); err != nil {
+			return fmt.Errorf("create collection %q (lookup %d): %w", title, i+1, err)
+		}
+		existingByTitle[strings.ToLower(title)] = struct{}{}
+		created++
+	}
+
+	logger.Successf("collection inject complete: created=%d skipped=%d", created, skipped)
+	return nil
+}
+
+func normalizeCollectionLookupContent(content string) string {
+	trimmed := strings.TrimSpace(content)
+	trimmed = strings.TrimPrefix(trimmed, "&")
+	trimmed = strings.TrimPrefix(trimmed, "?")
+	return trimmed
+}
+
+func composeCollectionContent(baseURI, content string) string {
+	trimmedContent := normalizeCollectionLookupContent(content)
+	if trimmedContent == "" {
+		return strings.TrimSpace(baseURI)
+	}
+	if strings.Contains(trimmedContent, "://") {
+		return trimmedContent
+	}
+	trimmedBase := strings.TrimSpace(baseURI)
+	if trimmedBase == "" {
+		return trimmedContent
+	}
+	trimmedBase = strings.TrimRight(trimmedBase, "&?")
+	if strings.Contains(trimmedBase, "?") {
+		return trimmedBase + "&" + trimmedContent
+	}
+	return trimmedBase + "?" + trimmedContent
+}
+
+func resolveCollectionContentURI(content, sourceSectionKey, targetSectionKey string) string {
+	out := strings.TrimSpace(content)
+	if out == "" {
+		return out
+	}
+	out = strings.ReplaceAll(out, "{{section_key}}", targetSectionKey)
+	out = strings.ReplaceAll(out, "{{sectionKey}}", targetSectionKey)
+	if sourceSectionKey == "" {
+		sourceSectionKey = extractCollectionSourceSectionKey(out)
+	}
+	if sourceSectionKey == "" || targetSectionKey == "" {
+		return out
+	}
+	return rewriteCollectionContentURI(out, sourceSectionKey, targetSectionKey)
+}
+
+func extractCollectionSourceSectionKey(content string) string {
+	matches := collectionSectionKeyRe.FindStringSubmatch(content)
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 func rewriteCollectionContentURI(content, sourceSectionKey, targetSectionKey string) string {

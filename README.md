@@ -24,7 +24,7 @@ To also upload each generated poster and set it as that collection's poster in P
 go run . -config config.toml -upload
 ```
 
-## Collection Export / Import
+## Collection Export / Import / Inject
 
 You can now export collections from one library and import them into another library, including smart collection filter definitions.
 
@@ -45,6 +45,14 @@ There is also a compatibility alias for import mode:
 ```bash
 go run . -config config.toml -coll-impot -coll-file collections-export.json
 ```
+
+To inject smart collections from `collections.toml` into a selected library, add `-col-inject`:
+
+```bash
+go run . -config config.toml -col-inject
+```
+
+Collection definitions live in `collections.toml` and use repeated `[[collection.lookup]]` tables. Put the shared Plex prefix in `base_uri`, then keep each lookup's `content` to just the variable tail, for example `dovi=1` or `push=1&resolution=2.7k&or=1&resolution=4k&pop=1`. The library section id is rewritten automatically when the collection is injected into the selected target library.
 
 Notes:
 

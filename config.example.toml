@@ -3,6 +3,7 @@ output_dir = "./output"
 log_file = "./frantic-postr.log"
 
 label_config = "./labels.toml"
+collection_config = "./collections.toml"
 
 [plex]
 base_url = "http://127.0.0.1:32400"
