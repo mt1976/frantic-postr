@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -263,6 +264,78 @@ var collectionSectionKeyRe = regexp.MustCompile(`(?:/library/sections/|%2Flibrar
 type AppLogger struct {
 	console *log.Logger
 	file    *log.Logger
+	quiet   bool
+}
+
+type ProgressTracker struct {
+	console *log.Logger
+	enabled bool
+	label   string
+	total   int
+	current int
+	mu      sync.Mutex
+}
+
+func newProgressTracker(logger *AppLogger, label string, total int) *ProgressTracker {
+	if logger == nil || logger.console == nil || !logger.quiet || total <= 0 {
+		return nil
+	}
+	return &ProgressTracker{console: logger.console, enabled: true, label: label, total: total}
+}
+
+func (p *ProgressTracker) render(final bool) {
+	if p == nil || !p.enabled || p.console == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	barWidth := 24
+	if p.total <= 0 {
+		return
+	}
+	if p.current > p.total {
+		p.current = p.total
+	}
+	filled := (p.current * barWidth) / p.total
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
+	percent := (p.current * 100) / p.total
+	if percent > 100 {
+		percent = 100
+	}
+	line := fmt.Sprintf("%s [%s] %d/%d (%d%%)", p.label, bar, p.current, p.total, percent)
+	if final {
+		p.console.Println(line)
+		return
+	}
+	p.console.Printf("\r%s", line)
+}
+
+func (p *ProgressTracker) Advance() {
+	if p == nil || !p.enabled {
+		return
+	}
+	p.mu.Lock()
+	p.current++
+	p.mu.Unlock()
+	p.render(false)
+}
+
+func (p *ProgressTracker) Finish() {
+	if p == nil || !p.enabled {
+		return
+	}
+	p.mu.Lock()
+	if p.current < p.total {
+		p.current = p.total
+	}
+	p.mu.Unlock()
+	p.render(true)
 }
 
 func (l *AppLogger) log(level, message string) {
@@ -270,7 +343,7 @@ func (l *AppLogger) log(level, message string) {
 	if l.file != nil {
 		l.file.Println(plain)
 	}
-	if l.console != nil {
+	if l.console != nil && (!l.quiet || level == "SUCCESS" || level == "WARNING" || level == "ERROR") {
 		l.console.Printf("%s %s", colorizeLevel(level), message)
 	}
 }
@@ -353,18 +426,46 @@ type collectionTransferRecord struct {
 	Content   string `json:"content,omitempty"`
 }
 
+type collectionInventoryEntry struct {
+	Title      string
+	RatingKey  string
+	SectionKey string
+	GUID       string
+	Smart      bool
+	ItemCount  int
+}
+
+type collectionDuplicateRow struct {
+	Title          string
+	RatingKey      string
+	ItemCount      int
+	Smart          bool
+	DuplicateCount int
+}
+
+type collectionDeleteRow struct {
+	Title     string
+	RatingKey string
+	ItemCount int
+	Smart     bool
+	Status    string
+}
+
 func main() {
 	configPath := flag.String("config", "config.toml", "Path to config file")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
+	quietMode := flag.Bool("quiet", false, "Hide server request logs from terminal output while still writing all logs to the file")
 	trailMode := flag.Bool("trail", false, "Process as normal but do not write updates to Plex")
 	trialMode := flag.Bool("trial", false, "Alias for -trail")
-	upload := flag.Bool("upload", false, "Upload generated posters to Plex collections")
+	uploadPosters := flag.Bool("upload-posters", false, "Upload generated posters to Plex collections")
+	genPostersMode := flag.Bool("gen-posters", false, "Generate collection posters for the selected library or libraries")
+	collDupes := flag.Bool("coll-dupes", false, "Report duplicate collection names in a selected library to a CSV file")
+	deleteNonSmart := flag.Bool("coll-delete-non-smart", false, "Delete all non-smart collections from a selected library and write a CSV audit")
 	collExport := flag.Bool("coll-export", false, "Export all collections (including smart filters) from a selected library")
 	collImport := flag.Bool("coll-import", false, "Import collections from -coll-file into a selected library")
-	collImpot := flag.Bool("coll-impot", false, "Alias for -coll-import")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
 	labelMode := flag.Bool("label", false, "Scan a selected library and add labels to items with titles matching -find")
-	colInject := flag.Bool("col-inject", false, "Inject smart collections from collections.toml into a selected library")
+	collInject := flag.Bool("coll-inject", false, "Inject smart collections from collections.toml into a selected library")
 	updateCategoryMode := flag.Bool("update-category", false, "When used with -label, also add values from -add to item category tags")
 	onlyCategoryMode := flag.Bool("only-category", false, "When used with -label, update only category tags from -add and skip label updates")
 	cleanMode := flag.Bool("clean", false, "Clean titles in a selected library by removing unsafe characters")
@@ -377,13 +478,25 @@ func main() {
 		colorOutputEnabled = false
 		fcolor.NoColor = true
 	}
+	if *quietMode {
+		colorOutputEnabled = false
+	}
 	if *trailMode || *trialMode {
 		trailModeEnabled = true
 	}
 
-	importMode := *collImport || *collImpot
+	importMode := *collImport
 	translateOnlyMode := *translateMode && !*cleanMode
 	modeCount := 0
+	if *genPostersMode {
+		modeCount++
+	}
+	if *collDupes {
+		modeCount++
+	}
+	if *deleteNonSmart {
+		modeCount++
+	}
 	if *collExport {
 		modeCount++
 	}
@@ -396,7 +509,7 @@ func main() {
 	if *labelMode {
 		modeCount++
 	}
-	if *colInject {
+	if *collInject {
 		modeCount++
 	}
 	if *cleanMode {
@@ -405,14 +518,18 @@ func main() {
 	if translateOnlyMode {
 		modeCount++
 	}
-	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -coll-export, -coll-import/-coll-impot, -clone, -label, -col-inject, -clean, -translate")
+	if modeCount == 0 {
+		flag.Usage()
+		return
 	}
-	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *colInject) {
+	if modeCount > 1 {
+		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
+	}
+	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
 	}
-	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *colInject || *cleanMode || translateOnlyMode) && *upload {
-		log.Fatal("invalid flags: -upload is not used with clone/import/export modes")
+	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart) && *uploadPosters {
+		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
 	labelsToAdd, err := parseLabelList(*labelAdd)
 	if err != nil {
@@ -427,6 +544,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to setup logger: %v", err)
 	}
+	logger.quiet = *quietMode
 	defer closeLogger()
 
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
@@ -441,7 +559,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t trail=%t upload=%t clone=%t label=%t col_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, trailModeEnabled, *upload, *cloneLibraryMode, *labelMode, *colInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	sections, err := fetchSections(client, cfg, logger)
@@ -521,9 +639,23 @@ func main() {
 		logger.Println("shutdown: frantic-postr completed")
 		return
 	}
-	if *colInject {
+	if *collInject {
 		if err := injectCollections(client, cfg, sections, logger); err != nil {
 			logger.Fatalf("collection inject failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *collDupes {
+		if err := reportDuplicateCollections(client, cfg, sections, logger); err != nil {
+			logger.Fatalf("duplicate collection report failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *deleteNonSmart {
+		if err := deleteNonSmartCollections(client, cfg, sections, logger); err != nil {
+			logger.Fatalf("delete non-smart collections failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
@@ -557,43 +689,45 @@ func main() {
 		return
 	}
 
-	selectedSections, err := selectSections(sections)
-	if err != nil {
-		logger.Fatalf("failed to select library: %v", err)
-	}
-	for _, section := range selectedSections {
-		logger.Printf("selected library: %s (%s)", section.Title, section.Key)
-	}
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(selectedSections))
-	for _, section := range selectedSections {
-		section := section
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			collections, err := fetchCollections(client, cfg, section.Key, logger)
-			if err != nil {
-				errCh <- fmt.Errorf("fetch collections for %s: %w", section.Title, err)
-				return
-			}
-			logger.Printf("collections fetched: library=%s count=%d", section.Title, len(collections))
-
-			if err := processCollections(client, cfg, section.Title, collections, *upload, logger); err != nil {
-				errCh <- fmt.Errorf("process %s: %w", section.Title, err)
-				return
-			}
-		}()
-	}
-	wg.Wait()
-	close(errCh)
-
-	if len(errCh) > 0 {
-		errs := make([]string, 0, len(errCh))
-		for err := range errCh {
-			errs = append(errs, err.Error())
+	if *genPostersMode {
+		selectedSections, err := selectSections(sections)
+		if err != nil {
+			logger.Fatalf("failed to select library: %v", err)
 		}
-		logger.Fatalf("processing failed: %s", strings.Join(errs, "; "))
+		for _, section := range selectedSections {
+			logger.Printf("selected library: %s (%s)", section.Title, section.Key)
+		}
+
+		var wg sync.WaitGroup
+		errCh := make(chan error, len(selectedSections))
+		for _, section := range selectedSections {
+			section := section
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				collections, err := fetchCollections(client, cfg, section.Key, logger)
+				if err != nil {
+					errCh <- fmt.Errorf("fetch collections for %s: %w", section.Title, err)
+					return
+				}
+				logger.Printf("collections fetched: library=%s count=%d", section.Title, len(collections))
+
+				if err := processCollections(client, cfg, section.Title, collections, *uploadPosters, logger); err != nil {
+					errCh <- fmt.Errorf("process %s: %w", section.Title, err)
+					return
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+
+		if len(errCh) > 0 {
+			errs := make([]string, 0, len(errCh))
+			for err := range errCh {
+				errs = append(errs, err.Error())
+			}
+			logger.Fatalf("processing failed: %s", strings.Join(errs, "; "))
+		}
 	}
 
 	logger.Println("shutdown: frantic-postr completed")
@@ -871,6 +1005,35 @@ func writeCleanReport(path string, rows []cleanReportRow) error {
 	return nil
 }
 
+func writeCSVReport(path string, header []string, rows [][]string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create report dir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create report file: %w", err)
+	}
+	defer f.Close()
+	writer := csv.NewWriter(f)
+	if len(header) > 0 {
+		if err := writer.Write(header); err != nil {
+			return err
+		}
+	}
+	for _, row := range rows {
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+	writer.Flush()
+	return writer.Error()
+}
+
+func uniqueCollectionReportPath(outputDir, prefix string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, "collections", fmt.Sprintf("%s-%s.csv", prefix, timestamp))
+}
+
 func uniqueRunLogPath(path string, now time.Time) string {
 	dir := filepath.Dir(path)
 	ext := filepath.Ext(path)
@@ -1009,6 +1172,91 @@ func fetchCollections(client *http.Client, cfg Config, sectionKey string, logger
 		}
 	}
 	return collections, nil
+}
+
+func fetchCollectionItemCount(client *http.Client, cfg Config, ratingKey string, logger *AppLogger) (int, error) {
+	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/collections/" + ratingKey + "/allLeaves"
+	logger.APIf("plex call: GET %s", endpoint)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
+	if err != nil {
+		return 0, err
+	}
+	var out plexSectionAllResponse
+	if err := xml.Unmarshal(respBody, &out); err != nil {
+		return 0, err
+	}
+	if out.Size > 0 {
+		return out.Size, nil
+	}
+	return len(out.Metadata) + len(out.Videos), nil
+}
+
+func fetchCollectionInventory(client *http.Client, cfg Config, sectionKey string, logger *AppLogger) ([]collectionInventoryEntry, error) {
+	collections, err := fetchCollections(client, cfg, sectionKey, logger)
+	if err != nil {
+		return nil, err
+	}
+	progress := newProgressTracker(logger, "collection inventory", len(collections))
+	defer progress.Finish()
+
+	entries := make([]collectionInventoryEntry, 0, len(collections))
+	for _, collection := range collections {
+		detail, err := fetchCollectionDetails(client, cfg, collection.RatingKey, logger)
+		if err != nil {
+			return nil, fmt.Errorf("fetch details for collection %q: %w", collection.Title, err)
+		}
+		itemCount, err := fetchCollectionItemCount(client, cfg, collection.RatingKey, logger)
+		if err != nil {
+			return nil, fmt.Errorf("fetch item count for collection %q: %w", collection.Title, err)
+		}
+		entries = append(entries, collectionInventoryEntry{
+			Title:      collection.Title,
+			RatingKey:  collection.RatingKey,
+			SectionKey: sectionKey,
+			GUID:       collection.GUID,
+			Smart:      detail.Smart,
+			ItemCount:  itemCount,
+		})
+		progress.Advance()
+	}
+	return entries, nil
+}
+
+
+func deleteCollection(client *http.Client, cfg Config, sectionKey string, ratingKey string, logger *AppLogger) error {
+	if strings.TrimSpace(sectionKey) == "" {
+		return errors.New("missing collection section key")
+	}
+	if strings.TrimSpace(ratingKey) == "" {
+		return errors.New("missing collection rating key")
+	}
+	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/sections/" + sectionKey + "/collection/" + ratingKey
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	q := u.Query()
+	q.Set("X-Plex-Token", cfg.Plex.Token)
+	u.RawQuery = q.Encode()
+	if logger != nil {
+		logger.APIf("plex call: DELETE %s", u.String())
+		logger.APIf("plex curl: %s", curlCommand("DELETE", u.String()))
+	}
+	if shouldSkipPlexWrite(logger, "delete collection", u.String()) {
+		return nil
+	}
+	resp, err := doRequestWithRetry(client, cfg.Plex.Retries, cfg.Plex.RetryBaseMs, cfg.Plex.RetryMaxMs, logger, "DELETE "+u.String(), func() (*http.Request, error) {
+		return http.NewRequest(http.MethodDelete, u.String(), nil)
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("plex delete collection failed: status=%s body=%s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func fetchSectionItems(client *http.Client, cfg Config, sectionKey string, logger *AppLogger) ([]plexLibraryItem, error) {
@@ -1434,6 +1682,8 @@ func buildCreateLibraryURL(baseURL, token string, sourceDetail plexSectionDetail
 }
 
 func applySectionPreferences(client *http.Client, cfg Config, sectionKey string, prefs []plexSectionPref, logger *AppLogger) error {
+	progress := newProgressTracker(logger, "clone preferences", len(prefs))
+	defer progress.Finish()
 	applied := 0
 	skipped := 0
 	failed := 0
@@ -1441,6 +1691,7 @@ func applySectionPreferences(client *http.Client, cfg Config, sectionKey string,
 		id := strings.TrimSpace(pref.ID)
 		if id == "" {
 			skipped++
+			progress.Advance()
 			continue
 		}
 		if err := setSectionPreference(client, cfg, sectionKey, id, pref.Value, logger); err != nil {
@@ -1448,9 +1699,11 @@ func applySectionPreferences(client *http.Client, cfg Config, sectionKey string,
 			if logger != nil {
 				logger.Printf("library clone: preference copy failed id=%s error=%v", id, err)
 			}
+			progress.Advance()
 			continue
 		}
 		applied++
+		progress.Advance()
 	}
 	if logger != nil {
 		logger.Printf("library clone: preferences copied applied=%d skipped=%d failed=%d", applied, skipped, failed)
@@ -1515,6 +1768,8 @@ func labelMatchingItems(client *http.Client, cfg Config, selectedSection plexSec
 		return err
 	}
 	logger.Infof("label mode: scanned items=%d workers=%d", len(items), cfg.Plex.Workers)
+	progress := newProgressTracker(logger, "label", len(items))
+	defer progress.Finish()
 
 	sem := make(chan struct{}, cfg.Plex.Workers)
 	var wg sync.WaitGroup
@@ -1530,6 +1785,7 @@ func labelMatchingItems(client *http.Client, cfg Config, selectedSection plexSec
 		matchText := libraryItemMatchText(item)
 		matchedFind, matched := firstMatchedFind(matchText, finds)
 		if !matched {
+			progress.Advance()
 			continue
 		}
 		logger.Matchf("matched title=%q", highlightFindMatches(displayTitle, matchedFind))
@@ -1548,6 +1804,7 @@ func labelMatchingItems(client *http.Client, cfg Config, selectedSection plexSec
 				<-sem
 				activeWorkers.Add(-1)
 				logger.Infof("label mode: worker released ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+				progress.Advance()
 			}()
 
 			r := labelItemResult{displayTitle: displayTitle, ratingKey: item.RatingKey}
@@ -1655,6 +1912,8 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 	}
 	logger.Infof("clean mode: scanned items=%d", len(items))
 	logger.Infof("clean mode: workers=%d", cfg.Plex.Workers)
+	progress := newProgressTracker(logger, "clean", len(items))
+	defer progress.Finish()
 
 	unknownDate := time.Now().Format("20060102")
 	var stampMu sync.Mutex
@@ -1683,6 +1942,7 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 			resultsMu.Lock()
 			results = append(results, cleanItemResult{skipped: true})
 			resultsMu.Unlock()
+			progress.Advance()
 			logger.Warningf("clean mode: skipping item with empty rating key")
 			continue
 		}
@@ -1700,6 +1960,7 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 				<-sem
 				activeWorkers.Add(-1)
 				logger.Infof("clean mode: worker released ratingKey=%s active=%d/%d", item.RatingKey, activeWorkers.Load(), cfg.Plex.Workers)
+				progress.Advance()
 			}()
 
 			r := cleanItemResult{ratingKey: item.RatingKey}
@@ -1816,6 +2077,8 @@ func translateLibraryTitles(client *http.Client, cfg Config, sections []plexSect
 		return err
 	}
 	logger.Infof("translate mode: scanned items=%d", len(items))
+	progress := newProgressTracker(logger, "translate", len(items))
+	defer progress.Finish()
 
 	updated := 0
 	skipped := 0
@@ -1823,12 +2086,14 @@ func translateLibraryTitles(client *http.Client, cfg Config, sections []plexSect
 		if strings.TrimSpace(item.RatingKey) == "" {
 			skipped++
 			logger.Warningf("translate mode: skipping item with empty rating key")
+			progress.Advance()
 			continue
 		}
 		before := strings.TrimSpace(item.Title)
 		translated, detectedLang, translatedOk := maybeTranslateToEnglish(client, cfg, before, logger)
 		if !translatedOk || strings.TrimSpace(translated) == "" || translated == before {
 			skipped++
+			progress.Advance()
 			continue
 		}
 		if err := updateLibraryItemTitle(client, cfg, item.RatingKey, translated, logger); err != nil {
@@ -1836,6 +2101,7 @@ func translateLibraryTitles(client *http.Client, cfg Config, sections []plexSect
 		}
 		updated++
 		logger.Successf("translate mode: title updated ratingKey=%s lang=%s before=%q after=%q", item.RatingKey, detectedLang, before, translated)
+		progress.Advance()
 	}
 
 	logger.Successf("translate mode complete: updated=%d skipped=%d", updated, skipped)
@@ -2484,6 +2750,8 @@ func exportCollections(client *http.Client, cfg Config, sections []plexSection, 
 	if err != nil {
 		return err
 	}
+	progress := newProgressTracker(logger, "export collections", len(collections))
+	defer progress.Finish()
 
 	transfer := collectionTransferFile{
 		Version:       1,
@@ -2501,6 +2769,7 @@ func exportCollections(client *http.Client, cfg Config, sections []plexSection, 
 			detail.Title = collection.Title
 		}
 		transfer.Collections = append(transfer.Collections, detail)
+		progress.Advance()
 	}
 
 	jsonBytes, err := json.MarshalIndent(transfer, "", "  ")
@@ -2543,6 +2812,8 @@ func importCollections(client *http.Client, cfg Config, sections []plexSection, 
 	if err != nil {
 		return err
 	}
+	progress := newProgressTracker(logger, "import collections", len(transfer.Collections))
+	defer progress.Finish()
 	existingByTitle := make(map[string]struct{}, len(existing))
 	for _, collection := range existing {
 		existingByTitle[strings.ToLower(collection.Title)] = struct{}{}
@@ -2558,6 +2829,7 @@ func importCollections(client *http.Client, cfg Config, sections []plexSection, 
 		if _, ok := existingByTitle[strings.ToLower(title)]; ok {
 			skipped++
 			logger.Printf("collection import: skip existing title=%q", title)
+			progress.Advance()
 			continue
 		}
 
@@ -2566,6 +2838,7 @@ func importCollections(client *http.Client, cfg Config, sections []plexSection, 
 		}
 		existingByTitle[strings.ToLower(title)] = struct{}{}
 		created++
+		progress.Advance()
 	}
 
 	logger.Successf("collection import complete: created=%d skipped=%d", created, skipped)
@@ -2640,7 +2913,7 @@ func createCollection(client *http.Client, cfg Config, sourceSectionKey, targetS
 
 func injectCollections(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
 	if len(cfg.Collection.Lookups) == 0 {
-		return errors.New("invalid flags: -col-inject requires one or more [[collection.lookup]] entries in collections.toml")
+		return errors.New("invalid flags: -coll-inject requires one or more [[collection.lookup]] entries in collections.toml")
 	}
 
 	targetSection, err := selectSingleSection(sections)
@@ -2648,6 +2921,8 @@ func injectCollections(client *http.Client, cfg Config, sections []plexSection, 
 		return err
 	}
 	logger.Printf("collection inject: target library=%s (%s)", targetSection.Title, targetSection.Key)
+	progress := newProgressTracker(logger, "inject collections", len(cfg.Collection.Lookups))
+	defer progress.Finish()
 
 	targetTypeCode, err := sectionTypeToPlexTypeCode(targetSection.Type)
 	if err != nil {
@@ -2673,6 +2948,7 @@ func injectCollections(client *http.Client, cfg Config, sections []plexSection, 
 		if _, ok := existingByTitle[strings.ToLower(title)]; ok {
 			skipped++
 			logger.Printf("collection inject: skip existing title=%q", title)
+			progress.Advance()
 			continue
 		}
 
@@ -2686,10 +2962,148 @@ func injectCollections(client *http.Client, cfg Config, sections []plexSection, 
 		}
 		existingByTitle[strings.ToLower(title)] = struct{}{}
 		created++
+		progress.Advance()
 	}
 
 	logger.Successf("collection inject complete: created=%d skipped=%d", created, skipped)
 	return nil
+}
+
+func reportDuplicateCollections(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
+	selectedSection, err := selectSingleSection(sections)
+	if err != nil {
+		return err
+	}
+	logger.Printf("collection dupes: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+
+	entries, err := fetchCollectionInventory(client, cfg, selectedSection.Key, logger)
+	if err != nil {
+		return err
+	}
+
+	rows, dupCount := buildDuplicateCollectionRows(entries)
+	for _, row := range rows {
+		logger.Successf("duplicate collection: title=%q items=%s rating_key=%s", row[0], row[2], row[1])
+	}
+
+	reportPath := uniqueCollectionReportPath(cfg.OutputDir, "duplicate-collections", time.Now())
+	if err := writeCSVReport(reportPath, []string{"title", "rating_key", "item_count", "smart", "duplicate_group_size"}, rows); err != nil {
+		return err
+	}
+	logger.Successf("collection dupes report complete: file=%s duplicate_groups=%d duplicate_rows=%d", reportPath, dupCount, len(rows))
+	return nil
+}
+
+func deleteNonSmartCollections(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
+	selectedSection, err := selectSingleSection(sections)
+	if err != nil {
+		return err
+	}
+	logger.Printf("collection delete non-smart: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+
+	entries, err := fetchCollectionInventory(client, cfg, selectedSection.Key, logger)
+	if err != nil {
+		return err
+	}
+
+	deletions, deleteCount, deleteFailures, err := deleteNonSmartCollectionEntries(client, cfg, entries, logger)
+	if err != nil {
+		return err
+	}
+
+	reportPath := uniqueCollectionReportPath(cfg.OutputDir, "deleted-non-smart-collections", time.Now())
+	rows := make([][]string, 0, len(deletions))
+	for _, row := range deletions {
+		rows = append(rows, []string{
+			row.Title,
+			row.RatingKey,
+			strconv.Itoa(row.ItemCount),
+			strconv.FormatBool(row.Smart),
+			row.Status,
+		})
+	}
+	if err := writeCSVReport(reportPath, []string{"title", "rating_key", "item_count", "smart", "status"}, rows); err != nil {
+		return err
+	}
+	logger.Successf("delete non-smart collections complete: file=%s deleted=%d failed=%d skipped_smart=%d", reportPath, deleteCount, deleteFailures, len(entries)-len(deletions))
+	if deleteFailures > 0 {
+		return fmt.Errorf("deleted %d collections with %d failures", deleteCount, deleteFailures)
+	}
+	return nil
+}
+
+func buildDuplicateCollectionRows(entries []collectionInventoryEntry) ([][]string, int) {
+	dupesByTitle := make(map[string][]collectionInventoryEntry)
+	for _, entry := range entries {
+		key := strings.ToLower(strings.TrimSpace(entry.Title))
+		if key == "" {
+			continue
+		}
+		dupesByTitle[key] = append(dupesByTitle[key], entry)
+	}
+
+	keys := make([]string, 0, len(dupesByTitle))
+	for key, group := range dupesByTitle {
+		if len(group) > 1 {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+
+	rows := make([][]string, 0)
+	dupCount := 0
+	for _, key := range keys {
+		group := dupesByTitle[key]
+		slices.SortFunc(group, func(a, b collectionInventoryEntry) int {
+			if a.Title == b.Title {
+				return strings.Compare(a.RatingKey, b.RatingKey)
+			}
+			return strings.Compare(a.Title, b.Title)
+		})
+		dupCount++
+		for _, entry := range group {
+			rows = append(rows, []string{
+				entry.Title,
+				entry.RatingKey,
+				strconv.Itoa(entry.ItemCount),
+				strconv.FormatBool(entry.Smart),
+				strconv.Itoa(len(group)),
+			})
+		}
+	}
+	return rows, dupCount
+}
+
+func deleteNonSmartCollectionEntries(client *http.Client, cfg Config, entries []collectionInventoryEntry, logger *AppLogger) ([]collectionDeleteRow, int, int, error) {
+	deletions := make([]collectionDeleteRow, 0)
+	progress := newProgressTracker(logger, "delete collections", len(entries))
+	defer progress.Finish()
+	deleteCount := 0
+	deleteFailures := 0
+	for _, entry := range entries {
+		if entry.Smart {
+			progress.Advance()
+			continue
+		}
+		status := "deleted"
+		if err := deleteCollection(client, cfg, entry.SectionKey, entry.RatingKey, logger); err != nil {
+			status = "failed: " + err.Error()
+			deleteFailures++
+			logger.Errorf("delete non-smart failed: title=%q rating_key=%s error=%v", entry.Title, entry.RatingKey, err)
+		} else {
+			deleteCount++
+			logger.Successf("deleted collection: title=%q items=%d rating_key=%s", entry.Title, entry.ItemCount, entry.RatingKey)
+		}
+		deletions = append(deletions, collectionDeleteRow{
+			Title:     entry.Title,
+			RatingKey: entry.RatingKey,
+			ItemCount: entry.ItemCount,
+			Smart:     entry.Smart,
+			Status:    status,
+		})
+		progress.Advance()
+	}
+	return deletions, deleteCount, deleteFailures, nil
 }
 
 func normalizeCollectionLookupContent(content string) string {
@@ -2794,6 +3208,8 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 	}
 	logger.Printf("output dir ready: %s", outDir)
 	collections = disambiguateCollectionsByGUID(collections)
+	progress := newProgressTracker(logger, "gen posters", len(collections))
+	defer progress.Finish()
 	for _, collection := range collections {
 		outputPath := buildOutputPath(outDir, collection.Title, cfg.TemplateImage)
 		logger.Printf("creating poster: collection=%q guid=%q output=%s", collection.Title, collection.GUID, outputPath)
@@ -2806,6 +3222,7 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 				return fmt.Errorf("upload poster for %q: %w", collection.Title, err)
 			}
 		}
+		progress.Advance()
 	}
 	return nil
 }

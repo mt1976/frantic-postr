@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -16,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -91,10 +93,10 @@ func TestRetryBackoff(t *testing.T) {
 	defer func() { randFloat64 = orig }()
 
 	tests := []struct {
-		attempt    int
-		baseMs     int
-		maxMs      int
-		wantExact  time.Duration // with jitter=1.0, result == cap * 1ms
+		attempt   int
+		baseMs    int
+		maxMs     int
+		wantExact time.Duration // with jitter=1.0, result == cap * 1ms
 	}{
 		// attempt 0: cap = min(30000, 500*2^0) = 500ms
 		{0, 500, 30000, 500 * time.Millisecond},
@@ -164,6 +166,97 @@ func TestDoPlexGETLogsRunnableCurlCommand(t *testing.T) {
 	}
 }
 
+func TestQuietLoggerSuppressesAPIOutputOnConsole(t *testing.T) {
+	var console bytes.Buffer
+	var file bytes.Buffer
+	logger := &AppLogger{
+		console: log.New(&console, "", 0),
+		file:    log.New(&file, "", 0),
+		quiet:   true,
+	}
+
+	logger.Infof("progress message")
+	logger.Successf("poster created: %s", "Collection.png")
+	logger.APIf("plex call: GET %s", "https://example.test/library/sections")
+
+	consoleOutput := console.String()
+	if strings.Contains(consoleOutput, "progress message") {
+		t.Fatalf("expected info log to be hidden from console, got %q", consoleOutput)
+	}
+	if !strings.Contains(consoleOutput, "poster created: Collection.png") {
+		t.Fatalf("expected success log to remain visible on console, got %q", consoleOutput)
+	}
+	if strings.Contains(consoleOutput, "plex call:") {
+		t.Fatalf("expected API log to be hidden from console, got %q", consoleOutput)
+	}
+	if !strings.Contains(file.String(), "INFO progress message") {
+		t.Fatalf("expected progress message in file log, got %q", file.String())
+	}
+	if !strings.Contains(file.String(), "SUCCESS poster created: Collection.png") {
+		t.Fatalf("expected success log in file log, got %q", file.String())
+	}
+	if !strings.Contains(file.String(), "API plex call: GET https://example.test/library/sections") {
+		t.Fatalf("expected API log in file log, got %q", file.String())
+	}
+}
+
+func TestQuietProgressTrackerRendersToConsole(t *testing.T) {
+	var console bytes.Buffer
+	logger := &AppLogger{console: log.New(&console, "", 0), quiet: true}
+	progress := newProgressTracker(logger, "gen posters", 3)
+	if progress == nil {
+		t.Fatal("expected progress tracker in quiet mode")
+	}
+	progress.Advance()
+	progress.Advance()
+	progress.Finish()
+
+	output := console.String()
+	if !strings.Contains(output, "gen posters [") {
+		t.Fatalf("expected progress bar output, got %q", output)
+	}
+	if !strings.Contains(output, "3/3") {
+		t.Fatalf("expected completed count in progress output, got %q", output)
+	}
+	if strings.Contains(output, "plex call:") {
+		t.Fatalf("expected API log to be hidden from console, got %q", console.String())
+	}
+}
+
+func TestMainWithoutModeFlagsPrintsHelp(t *testing.T) {
+	origArgs := os.Args
+	origCommandLine := flag.CommandLine
+	defer func() {
+		os.Args = origArgs
+		flag.CommandLine = origCommandLine
+	}()
+
+	var buf bytes.Buffer
+	flag.CommandLine = flag.NewFlagSet(origArgs[0], flag.ContinueOnError)
+	flag.CommandLine.SetOutput(&buf)
+	os.Args = []string{origArgs[0]}
+
+	main()
+
+	output := buf.String()
+	if !strings.Contains(output, "-gen-posters") {
+		t.Fatalf("expected help output to include -gen-posters, got %q", output)
+	}
+	if !strings.Contains(output, "-coll-dupes") {
+		t.Fatalf("expected help output to include -coll-dupes, got %q", output)
+	}
+	if !strings.Contains(output, "-coll-delete-non-smart") {
+		t.Fatalf("expected help output to include -coll-delete-non-smart, got %q", output)
+	}
+	if !strings.Contains(output, "-upload-posters") {
+		t.Fatalf("expected help output to include -upload-posters, got %q", output)
+	}
+	oldFlagRe := regexp.MustCompile(`(?m)^\s+-process(\s|$)|^\s+-upload(\s|$)|^\s+-col-inject(\s|$)|^\s+-coll-impot(\s|$)`)
+	if oldFlagRe.MatchString(output) {
+		t.Fatalf("expected help output to omit old aliases, got %q", output)
+	}
+}
+
 func TestFetchCollectionsReturnsTitlesAndGUIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<MediaContainer size="2"><Directory ratingKey="357900" guid="collection://21b2716a-a84a-429b-abbc-6c89312b636d" title="D4ddy_T"></Directory><Directory ratingKey="333373" guid="collection://9c80b1ca-358f-4068-864d-d57e420ab705" title="RuggerLad69"></Directory></MediaContainer>`))
@@ -189,6 +282,86 @@ func TestFetchCollectionsReturnsTitlesAndGUIDs(t *testing.T) {
 	}
 	if collections[1].Title != "RuggerLad69" || collections[1].GUID != "collection://9c80b1ca-358f-4068-864d-d57e420ab705" {
 		t.Fatalf("unexpected second collection: %+v", collections[1])
+	}
+}
+
+func TestFetchCollectionItemCountUsesAllLeavesPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/collections/357900/allLeaves" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`<MediaContainer size="4"></MediaContainer>`))
+	}))
+	defer server.Close()
+
+	var cfg Config
+	cfg.Plex.BaseURL = server.URL
+	cfg.Plex.Token = "secret-token"
+
+	count, err := fetchCollectionItemCount(server.Client(), cfg, "357900", newTestLogger(io.Discard, io.Discard))
+	if err != nil {
+		t.Fatalf("fetchCollectionItemCount failed: %v", err)
+	}
+	if count != 4 {
+		t.Fatalf("expected count 4, got %d", count)
+	}
+}
+
+func TestBuildDuplicateCollectionRowsGroupsByTitle(t *testing.T) {
+	rows, dupGroups := buildDuplicateCollectionRows([]collectionInventoryEntry{
+		{Title: "Duplicate", RatingKey: "1", ItemCount: 3, Smart: true},
+		{Title: "duplicate", RatingKey: "2", ItemCount: 5, Smart: false},
+		{Title: "Unique", RatingKey: "3", ItemCount: 7, Smart: false},
+	})
+
+	if dupGroups != 1 {
+		t.Fatalf("expected 1 duplicate group, got %d", dupGroups)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 duplicate rows, got %d", len(rows))
+	}
+	if rows[0][0] != "Duplicate" || rows[1][0] != "duplicate" {
+		t.Fatalf("unexpected duplicate rows: %+v", rows)
+	}
+	if rows[0][4] != "2" || rows[1][4] != "2" {
+		t.Fatalf("expected duplicate group size 2, got %+v", rows)
+	}
+}
+
+func TestDeleteNonSmartCollectionEntriesDeletesOnlyNonSmart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+		if r.URL.Path != "/library/sections/42/collection/357900" {
+			t.Fatalf("unexpected delete path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("X-Plex-Token"); got != "secret-token" {
+			t.Fatalf("unexpected token: %s", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	var cfg Config
+	cfg.Plex.BaseURL = server.URL
+	cfg.Plex.Token = "secret-token"
+	cfg.Plex.Retries = 1
+	cfg.Plex.RetryBaseMs = 1
+	cfg.Plex.RetryMaxMs = 1
+
+	rows, deleted, failures, err := deleteNonSmartCollectionEntries(server.Client(), cfg, []collectionInventoryEntry{
+		{Title: "Smart", RatingKey: "111", SectionKey: "42", ItemCount: 2, Smart: true},
+		{Title: "Plain", RatingKey: "357900", SectionKey: "42", ItemCount: 7, Smart: false},
+	}, newTestLogger(io.Discard, io.Discard))
+	if err != nil {
+		t.Fatalf("deleteNonSmartCollectionEntries failed: %v", err)
+	}
+	if deleted != 1 || failures != 0 {
+		t.Fatalf("unexpected delete summary: deleted=%d failures=%d", deleted, failures)
+	}
+	if len(rows) != 1 || rows[0].Title != "Plain" || rows[0].Status != "deleted" {
+		t.Fatalf("unexpected deletion rows: %+v", rows)
 	}
 }
 
@@ -666,11 +839,11 @@ func TestLibraryItemFileStem(t *testing.T) {
 
 func TestSeedCleanTitles(t *testing.T) {
 	tests := []struct {
-		name         string
-		title        string
-		sortTitle    string
-		fileStem     string
-		wantTitle    string
+		name          string
+		title         string
+		sortTitle     string
+		fileStem      string
+		wantTitle     string
 		wantSortTitle string
 	}{
 		{

@@ -6,11 +6,13 @@ A Go CLI that connects to Plex, lets you choose a library, reads all collections
 
 1. Copy `config.example.toml` to `config.toml` and update values.
 2. Ensure your template image exists (`.png` or `.jpg`).
-3. Run:
+3. Run the explicit poster generation mode:
 
 ```bash
-go run . -config config.toml
+go run . -config config.toml -gen-posters
 ```
+
+Running the app without a mode flag prints the help text instead of starting a workflow.
 
 Library selection memory:
 
@@ -18,10 +20,16 @@ Library selection memory:
 - On next run, selection prompt shows the previous selection as the default.
 - Press Enter to reuse it, or type a new value to replace it.
 
-To also upload each generated poster and set it as that collection's poster in Plex during processing, add `-upload`:
+To also upload each generated poster and set it as that collection's poster in Plex during poster generation, add `-upload-posters`:
 
 ```bash
-go run . -config config.toml -upload
+go run . -config config.toml -gen-posters -upload-posters
+```
+
+To keep request chatter out of the terminal while still writing everything to the log file, add `-quiet`:
+
+```bash
+go run . -config config.toml -gen-posters -quiet
 ```
 
 ## Collection Export / Import / Inject
@@ -46,13 +54,27 @@ There is also a compatibility alias for import mode:
 go run . -config config.toml -coll-impot -coll-file collections-export.json
 ```
 
-To inject smart collections from `collections.toml` into a selected library, add `-col-inject`:
+To inject smart collections from `collections.toml` into a selected library, add `-coll-inject`:
 
 ```bash
-go run . -config config.toml -col-inject
+go run . -config config.toml -coll-inject
 ```
 
 Collection definitions live in `collections.toml` and use repeated `[[collection.lookup]]` tables. Put the shared Plex prefix in `base_uri`, then keep each lookup's `content` to just the variable tail, for example `dovi=1` or `push=1&resolution=2.7k&or=1&resolution=4k&pop=1`. The library section id is rewritten automatically when the collection is injected into the selected target library.
+
+## Collection Audit / Cleanup
+
+To find duplicate collection names in a selected library and write a CSV report with item counts, use `-coll-dupes`:
+
+```bash
+go run . -config config.toml -coll-dupes
+```
+
+To delete every non-smart collection from a selected library and write a CSV audit, use `-coll-delete-non-smart`:
+
+```bash
+go run . -config config.toml -coll-delete-non-smart
+```
 
 Notes:
 
@@ -83,7 +105,7 @@ Flow:
 Notes:
 
 - Clone mode is exclusive with collection import/export modes.
-- `-upload` is not used in clone mode.
+- `-upload-posters` is not used in clone mode.
 
 ## Label Mode
 
