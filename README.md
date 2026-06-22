@@ -32,6 +32,16 @@ To keep request chatter out of the terminal while still writing everything to th
 go run . -config config.toml -gen-posters -quiet
 ```
 
+Interactive prompt layout:
+
+- The app uses an old-school terminal screen style for interactive prompts.
+- Top rows: app name on the left and current date on the right.
+- A separator line follows the header.
+- Bottom three rows are reserved for:
+  - a separator line,
+  - an input row,
+  - a feedback row (validation errors, prompt guidance, etc).
+
 ## Collection Export / Import / Inject
 
 You can now export collections from one library and import them into another library, including smart collection filter definitions.
@@ -42,7 +52,7 @@ You can now export collections from one library and import them into another lib
 go run . -config config.toml -coll-export -coll-file collections-export.json
 ```
 
-2. Import that file into a single selected target library:
+1. Import that file into a single selected target library:
 
 ```bash
 go run . -config config.toml -coll-import -coll-file collections-export.json
@@ -61,6 +71,39 @@ go run . -config config.toml -coll-inject
 ```
 
 Collection definitions live in `collections.toml` and use repeated `[[collection.lookup]]` tables. Put the shared Plex prefix in `base_uri`, then keep each lookup's `content` to just the variable tail, for example `dovi=1` or `push=1&resolution=2.7k&or=1&resolution=4k&pop=1`. The library section id is rewritten automatically when the collection is injected into the selected target library.
+
+## Poster Background Routing
+
+Poster generation can use four template backgrounds:
+
+- `template_image`: default background
+- `type_template_image`: used for collections listed in `type_collections_file`
+- `studio_template_image`: used for collections listed in `studio_collections_file`
+- `admin_template_image`: used for collections listed in `admin_collections_file`
+
+Example config:
+
+```toml
+template_image = "./templates/template-3.png"
+type_template_image = "./templates/template-1.png"
+studio_template_image = "./templates/template-3.png"
+admin_template_image = "./templates/template-2.png"
+type_collections_file = "./types-collections.txt"
+studio_collections_file = "./studio-collections.txt"
+admin_collections_file = "./admin-collections.txt"
+```
+
+Matching rules for collection names in those files:
+
+- Case-insensitive
+- Spaces and punctuation are ignored on both sides before comparison
+- If a collection is not in any list, the default background is used
+- If a collection appears in multiple lists, precedence is `admin`, then `studio`, then `type`
+
+Poster output details:
+
+- Generated poster filenames use the collection title only.
+- A per-library poster CSV report is written under the library output folder and includes the `background` used for each collection.
 
 ## Collection Audit / Cleanup
 
@@ -243,6 +286,41 @@ When `-translate` is used with `-clean`, titles are translated to English first,
 Translation requests are throttled by `translate_rate_limit_per_minute` to help avoid `429 Too Many Requests` responses.
 
 The app writes posters to `output/<library-name>/` (or `output_dir/<library-name>/`) and logs startup, config reads, Plex calls, processing results, and file creation details to stdout and a timestamped log file derived from `log_file` for that run. Plex API requests are also logged as executable `curl` commands so the request can be replayed manually from a shell.
+
+## Collection Path Clean Mode
+
+Path clean mode scans one selected library, then lets you choose a collection by typing at least the first three characters of its name.
+
+```bash
+go run . -config config.toml -coll-path-clean
+```
+
+Flow:
+
+1. Select one library, using the last remembered library choice as the default when available.
+2. Enter at least the first three characters of a collection name.
+3. The app shows all collections whose names start with those characters.
+4. If there is only one match, or an exact match, the app asks for confirmation.
+5. If there are multiple matches, select one from the list and confirm before continuing.
+6. If you answer `N`, the process stops.
+7. If you answer `Y`, the app scans every item in the collection and rebuilds each title from the file path only.
+
+Title format:
+
+- The filename stem becomes the leading part of the title.
+- Each parent directory is appended in reverse order using ` - ` as the separator.
+- Windows paths are handled correctly even when the app runs on macOS.
+
+Example:
+
+- `V:\FILTH\TORRENT\chalate2000\0gnfqk81vt7lmlg8b4ykb_source.mp4`
+- `0gnfqk81vt7lmlg8b4ykb source - chalate2000 - TORRENT - FILTH`
+
+Notes:
+
+- The mode respects `-quiet` and `-trial`/`-trail` the same way the other write modes do.
+- Each update is recorded in `output/path-clean/` as a CSV audit.
+- `-coll-path-clean` is exclusive with the other single-mode workflows.
 
 Startup validation is strict: if `plex.base_url` / `plex.token` are missing, or required paths like `template_image` / `output_dir` do not exist, the app logs an error and exits.
 

@@ -47,6 +47,63 @@ func TestSanitizeFileName(t *testing.T) {
 	}
 }
 
+func TestNormalizeCollectionMatchKey(t *testing.T) {
+	got := normalizeCollectionMatchKey("  My   Admin   Queue ")
+	if got != "myadminqueue" {
+		t.Fatalf("unexpected normalized key: %q", got)
+	}
+	withPunctuation := normalizeCollectionMatchKey("Bears (Chubs)")
+	if withPunctuation != "bearschubs" {
+		t.Fatalf("unexpected punctuation-normalized key: %q", withPunctuation)
+	}
+}
+
+func TestSelectPosterTemplateUsesCaseAndSpaceInsensitiveMatching(t *testing.T) {
+	cfg := Config{
+		TemplateImage:      "default.png",
+		TypeTemplateImage:  "type.png",
+		StudioTemplateImage: "studio.png",
+		AdminTemplateImage: "admin.png",
+		TypeCollectionSet: map[string]struct{}{
+			"mytypecollection": {},
+			"myclashcollection": {},
+		},
+		StudioCollectionSet: map[string]struct{}{
+			"mystudiocollection": {},
+			"myclashcollection":  {},
+		},
+		AdminCollectionSet: map[string]struct{}{
+			"myadminqueue": {},
+		},
+	}
+
+	path, background := selectPosterTemplate(cfg, " My Admin Queue ")
+	if path != "admin.png" || background != "admin" {
+		t.Fatalf("expected admin template, got path=%q background=%q", path, background)
+	}
+
+	path, background = selectPosterTemplate(cfg, "My Type Collection")
+	if path != "type.png" || background != "type" {
+		t.Fatalf("expected type template, got path=%q background=%q", path, background)
+	}
+
+	path, background = selectPosterTemplate(cfg, "My Studio Collection")
+	if path != "studio.png" || background != "studio" {
+		t.Fatalf("expected studio template, got path=%q background=%q", path, background)
+	}
+
+	// Clash case: studio should override type.
+	path, background = selectPosterTemplate(cfg, "My Clash Collection")
+	if path != "studio.png" || background != "studio" {
+		t.Fatalf("expected studio to override type, got path=%q background=%q", path, background)
+	}
+
+	path, background = selectPosterTemplate(cfg, "Other")
+	if path != "default.png" || background != "default" {
+		t.Fatalf("expected default template, got path=%q background=%q", path, background)
+	}
+}
+
 func TestRenderCollectionPosterCreatesOutput(t *testing.T) {
 	dir := t.TempDir()
 	templatePath := filepath.Join(dir, "template.png")
@@ -307,6 +364,31 @@ func TestFetchCollectionItemCountUsesAllLeavesPath(t *testing.T) {
 	}
 }
 
+func TestFetchCollectionItemsUsesItemsPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/library/collections/357900/items" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`<MediaContainer size="1"><Video ratingKey="365142" title="Example"><Media><Part file="V:\\FILTH\\TORRENT\\chalate2000\\0gnfqk81vt7lmlg8b4ykb_source.mp4"/></Media></Video></MediaContainer>`))
+	}))
+	defer server.Close()
+
+	var cfg Config
+	cfg.Plex.BaseURL = server.URL
+	cfg.Plex.Token = "secret-token"
+
+	items, err := fetchCollectionItems(server.Client(), cfg, "357900", newTestLogger(io.Discard, io.Discard))
+	if err != nil {
+		t.Fatalf("fetchCollectionItems failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].RatingKey != "365142" {
+		t.Fatalf("unexpected rating key: %q", items[0].RatingKey)
+	}
+}
+
 func TestBuildDuplicateCollectionRowsGroupsByTitle(t *testing.T) {
 	rows, dupGroups := buildDuplicateCollectionRows([]collectionInventoryEntry{
 		{Title: "Duplicate", RatingKey: "1", ItemCount: 3, Smart: true},
@@ -380,6 +462,29 @@ func TestWrapTextToWidthBreaksOnWordBoundaries(t *testing.T) {
 	}
 	if lines[0] != "Alpha" {
 		t.Fatalf("expected first line to break naturally at word boundary, got %q", lines[0])
+	}
+}
+
+func TestPosterDisplayTextUppercasesAndPreservesBreaks(t *testing.T) {
+	got := posterDisplayText("Top 100 Movies")
+	if got != "TOP 100\nMOVIES" {
+		t.Fatalf("expected uppercase poster text with preserved break, got %q", got)
+	}
+}
+
+func TestPosterTextPaddingLeavesExtraMargin(t *testing.T) {
+	cfg := Config{}
+	cfg.Font.Size = 64
+	cfg.Font.GlowRadius = 1
+	cfg.Font.ShadowOffsetX = 1
+	cfg.Font.ShadowOffsetY = 1
+
+	horizontal, vertical := posterTextPadding(cfg, 1000, 1500)
+	if horizontal <= 20 || vertical <= 20 {
+		t.Fatalf("expected padding larger than the previous inset, got x=%d y=%d", horizontal, vertical)
+	}
+	if horizontal < 48 || vertical < 57 {
+		t.Fatalf("expected a safer inset for poster text, got x=%d y=%d", horizontal, vertical)
 	}
 }
 
@@ -461,6 +566,36 @@ func TestParseSelectionInputAll(t *testing.T) {
 func TestParseSelectionInputInvalid(t *testing.T) {
 	if _, err := parseSelectionInput("4", 3); err == nil {
 		t.Fatal("expected invalid selection error")
+	}
+}
+
+func TestParsePageCommand(t *testing.T) {
+	if got := parsePageCommand("f"); got != 1 {
+		t.Fatalf("expected f to be next page, got %d", got)
+	}
+	if got := parsePageCommand("N"); got != 1 {
+		t.Fatalf("expected N to be next page, got %d", got)
+	}
+	if got := parsePageCommand("b"); got != -1 {
+		t.Fatalf("expected b to be previous page, got %d", got)
+	}
+	if got := parsePageCommand("3"); got != 0 {
+		t.Fatalf("expected non-page command to return 0, got %d", got)
+	}
+}
+
+func TestPageSlice(t *testing.T) {
+	start, end, pages := pageSlice(23, 0, 10)
+	if start != 0 || end != 10 || pages != 3 {
+		t.Fatalf("unexpected first page: start=%d end=%d pages=%d", start, end, pages)
+	}
+	start, end, pages = pageSlice(23, 2, 10)
+	if start != 20 || end != 23 || pages != 3 {
+		t.Fatalf("unexpected last page: start=%d end=%d pages=%d", start, end, pages)
+	}
+	start, end, pages = pageSlice(23, 99, 10)
+	if start != 20 || end != 23 || pages != 3 {
+		t.Fatalf("expected out-of-range page to clamp to last: start=%d end=%d pages=%d", start, end, pages)
 	}
 }
 
@@ -830,10 +965,18 @@ func TestLibraryItemMatchTextFallsBackToPartFile(t *testing.T) {
 
 func TestLibraryItemFileStem(t *testing.T) {
 	item := plexLibraryItem{
-		Media: []plexMedia{{Parts: []plexPart{{File: `/mnt/media/My.Video.Name.mkv`}}}},
+		Media: []plexMedia{{Parts: []plexPart{{File: `V:\FILTH\TORRENT\My.Video.Name.mkv`}}}},
 	}
 	if got := libraryItemFileStem(item); got != "My.Video.Name" {
 		t.Fatalf("unexpected file stem: %q", got)
+	}
+}
+
+func TestPathCleanTitleFromFilePath(t *testing.T) {
+	got := pathCleanTitleFromFilePath(`V:\FILTH\TORRENT\chalate2000\0gnfqk81vt7lmlg8b4ykb_source.mp4`, nil)
+	want := "0gnfqk81vt7lmlg8b4ykb source - chalate2000 - TORRENT - FILTH"
+	if got != want {
+		t.Fatalf("unexpected path-clean title: got %q want %q", got, want)
 	}
 }
 

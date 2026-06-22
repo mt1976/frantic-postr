@@ -67,11 +67,20 @@ type Config struct {
 		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
 	TemplateImage        string `toml:"template_image"`
+	TypeTemplateImage    string `toml:"type_template_image"`
+	StudioTemplateImage  string `toml:"studio_template_image"`
+	AdminTemplateImage   string `toml:"admin_template_image"`
+	TypeCollectionsFile  string `toml:"type_collections_file"`
+	StudioCollectionsFile string `toml:"studio_collections_file"`
+	AdminCollectionsFile string `toml:"admin_collections_file"`
 	OutputDir            string `toml:"output_dir"`
 	LogFile              string `toml:"log_file"`
 	LabelConfigFile      string `toml:"label_config"`
 	CollectionConfigFile string `toml:"collection_config"`
 	CollectionBaseURI    string `toml:"-"`
+	TypeCollectionSet    map[string]struct{} `toml:"-"`
+	StudioCollectionSet  map[string]struct{} `toml:"-"`
+	AdminCollectionSet   map[string]struct{} `toml:"-"`
 	Font                 struct {
 		File          string  `toml:"file"`
 		Size          float64 `toml:"size"`
@@ -254,7 +263,10 @@ var (
 	trailModeEnabled       = false
 	translateRateLimitMu   sync.Mutex
 	nextTranslateRequestAt time.Time
+	stdinReader            = bufio.NewReader(os.Stdin)
 )
+
+const appDisplayName = "frantic-postr"
 
 // videoExtRe matches a dot-prefixed video container extension, case-insensitively.
 var videoExtRe = regexp.MustCompile(`(?i)\.(mp4|mov|mpg|mpeg|mkv|avi|wmv|flv|webm|m4v|3gp|ts|vob|rm|rmvb|f4v|divx|xvid)\b`)
@@ -451,6 +463,14 @@ type collectionDeleteRow struct {
 	Status    string
 }
 
+type pathCleanReportRow struct {
+	Collection  string
+	RatingKey   string
+	FilePath    string
+	TitleBefore string
+	TitleAfter  string
+}
+
 func main() {
 	configPath := flag.String("config", "config.toml", "Path to config file")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
@@ -461,6 +481,7 @@ func main() {
 	genPostersMode := flag.Bool("gen-posters", false, "Generate collection posters for the selected library or libraries")
 	collDupes := flag.Bool("coll-dupes", false, "Report duplicate collection names in a selected library to a CSV file")
 	deleteNonSmart := flag.Bool("coll-delete-non-smart", false, "Delete all non-smart collections from a selected library and write a CSV audit")
+	pathCleanMode := flag.Bool("coll-path-clean", false, "Clean titles in a selected collection by rebuilding them from file paths")
 	collExport := flag.Bool("coll-export", false, "Export all collections (including smart filters) from a selected library")
 	collImport := flag.Bool("coll-import", false, "Import collections from -coll-file into a selected library")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
@@ -497,6 +518,9 @@ func main() {
 	if *deleteNonSmart {
 		modeCount++
 	}
+	if *pathCleanMode {
+		modeCount++
+	}
 	if *collExport {
 		modeCount++
 	}
@@ -523,12 +547,12 @@ func main() {
 		return
 	}
 	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
+		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
 	}
-	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart) {
+	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
 	}
-	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart) && *uploadPosters {
+	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode) && *uploadPosters {
 		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
 	labelsToAdd, err := parseLabelList(*labelAdd)
@@ -559,7 +583,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	sections, err := fetchSections(client, cfg, logger)
@@ -656,6 +680,13 @@ func main() {
 	if *deleteNonSmart {
 		if err := deleteNonSmartCollections(client, cfg, sections, logger); err != nil {
 			logger.Fatalf("delete non-smart collections failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *pathCleanMode {
+		if err := pathCleanCollectionTitles(client, cfg, sections, logger); err != nil {
+			logger.Fatalf("collection path clean failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
@@ -761,9 +792,18 @@ func loadConfig(path string) (Config, error) {
 	if cfg.OutputDir == "" {
 		cfg.OutputDir = "output"
 	}
+	cfg.TemplateImage = resolvePathRelativeToConfig(path, cfg.TemplateImage)
+	cfg.TypeTemplateImage = resolvePathRelativeToConfig(path, cfg.TypeTemplateImage)
+	cfg.StudioTemplateImage = resolvePathRelativeToConfig(path, cfg.StudioTemplateImage)
+	cfg.AdminTemplateImage = resolvePathRelativeToConfig(path, cfg.AdminTemplateImage)
+	cfg.TypeCollectionsFile = resolvePathRelativeToConfig(path, cfg.TypeCollectionsFile)
+	cfg.StudioCollectionsFile = resolvePathRelativeToConfig(path, cfg.StudioCollectionsFile)
+	cfg.AdminCollectionsFile = resolvePathRelativeToConfig(path, cfg.AdminCollectionsFile)
 	if cfg.LogFile == "" {
 		cfg.LogFile = "frantic-postr.log"
 	}
+	cfg.LogFile = resolvePathRelativeToConfig(path, cfg.LogFile)
+	cfg.OutputDir = resolvePathRelativeToConfig(path, cfg.OutputDir)
 	if cfg.Font.Size <= 0 {
 		cfg.Font.Size = 64
 	}
@@ -870,6 +910,51 @@ func loadConfig(path string) (Config, error) {
 	if err := requireFileExists("template_image", cfg.TemplateImage); err != nil {
 		return cfg, err
 	}
+	if strings.TrimSpace(cfg.TypeTemplateImage) != "" {
+		if err := requireFileExists("type_template_image", cfg.TypeTemplateImage); err != nil {
+			return cfg, err
+		}
+	}
+	if strings.TrimSpace(cfg.StudioTemplateImage) != "" {
+		if err := requireFileExists("studio_template_image", cfg.StudioTemplateImage); err != nil {
+			return cfg, err
+		}
+	}
+	if strings.TrimSpace(cfg.AdminTemplateImage) != "" {
+		if err := requireFileExists("admin_template_image", cfg.AdminTemplateImage); err != nil {
+			return cfg, err
+		}
+	}
+	if strings.TrimSpace(cfg.TypeCollectionsFile) != "" {
+		if err := requireFileExists("type_collections_file", cfg.TypeCollectionsFile); err != nil {
+			return cfg, err
+		}
+		set, err := loadCollectionNameSet(cfg.TypeCollectionsFile)
+		if err != nil {
+			return cfg, fmt.Errorf("type_collections_file: %w", err)
+		}
+		cfg.TypeCollectionSet = set
+	}
+	if strings.TrimSpace(cfg.StudioCollectionsFile) != "" {
+		if err := requireFileExists("studio_collections_file", cfg.StudioCollectionsFile); err != nil {
+			return cfg, err
+		}
+		set, err := loadCollectionNameSet(cfg.StudioCollectionsFile)
+		if err != nil {
+			return cfg, fmt.Errorf("studio_collections_file: %w", err)
+		}
+		cfg.StudioCollectionSet = set
+	}
+	if strings.TrimSpace(cfg.AdminCollectionsFile) != "" {
+		if err := requireFileExists("admin_collections_file", cfg.AdminCollectionsFile); err != nil {
+			return cfg, err
+		}
+		set, err := loadCollectionNameSet(cfg.AdminCollectionsFile)
+		if err != nil {
+			return cfg, fmt.Errorf("admin_collections_file: %w", err)
+		}
+		cfg.AdminCollectionSet = set
+	}
 	if err := requireDirExists("output_dir", cfg.OutputDir); err != nil {
 		return cfg, err
 	}
@@ -885,6 +970,48 @@ func loadConfig(path string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func resolvePathRelativeToConfig(configPath, targetPath string) string {
+	trimmed := strings.TrimSpace(targetPath)
+	if trimmed == "" || filepath.IsAbs(trimmed) {
+		return trimmed
+	}
+	return filepath.Join(filepath.Dir(configPath), trimmed)
+}
+
+func loadCollectionNameSet(path string) (map[string]struct{}, error) {
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{}
+	for _, line := range strings.Split(string(bytes), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") {
+			continue
+		}
+		key := normalizeCollectionMatchKey(trimmed)
+		if key == "" {
+			continue
+		}
+		set[key] = struct{}{}
+	}
+	return set, nil
+}
+
+func normalizeCollectionMatchKey(in string) string {
+	trimmed := strings.TrimSpace(in)
+	if trimmed == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(trimmed) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func loadSupplementalConfig(basePath, supplementalPath, fieldName string, target any) error {
@@ -1034,6 +1161,16 @@ func uniqueCollectionReportPath(outputDir, prefix string, now time.Time) string 
 	return filepath.Join(outputDir, "collections", fmt.Sprintf("%s-%s.csv", prefix, timestamp))
 }
 
+func uniquePathCleanReportPath(outputDir string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, "path-clean", fmt.Sprintf("path-clean-%s.csv", timestamp))
+}
+
+func uniquePosterReportPath(outputDir string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, fmt.Sprintf("posters-%s.csv", timestamp))
+}
+
 func uniqueRunLogPath(path string, now time.Time) string {
 	dir := filepath.Dir(path)
 	ext := filepath.Ext(path)
@@ -1068,6 +1205,12 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: clean.translate_endpoint=%s", cfg.Clean.TranslateEndpoint)
 	logger.Printf("config: clean.translate_rate_limit_per_minute=%d", cfg.Clean.TranslateRateLimitPerMinute)
 	logger.Printf("config: template_image=%s", cfg.TemplateImage)
+	logger.Printf("config: type_template_image=%s", cfg.TypeTemplateImage)
+	logger.Printf("config: studio_template_image=%s", cfg.StudioTemplateImage)
+	logger.Printf("config: admin_template_image=%s", cfg.AdminTemplateImage)
+	logger.Printf("config: type_collections_file=%s", cfg.TypeCollectionsFile)
+	logger.Printf("config: studio_collections_file=%s", cfg.StudioCollectionsFile)
+	logger.Printf("config: admin_collections_file=%s", cfg.AdminCollectionsFile)
 	logger.Printf("config: output_dir=%s", cfg.OutputDir)
 	logger.Printf("config: log_file=%s", cfg.LogFile)
 	logger.Printf("config: font.file=%s", cfg.Font.File)
@@ -1220,6 +1363,23 @@ func fetchCollectionInventory(client *http.Client, cfg Config, sectionKey string
 		progress.Advance()
 	}
 	return entries, nil
+}
+
+func fetchCollectionItems(client *http.Client, cfg Config, ratingKey string, logger *AppLogger) ([]plexLibraryItem, error) {
+	endpoint := strings.TrimRight(cfg.Plex.BaseURL, "/") + "/library/collections/" + ratingKey + "/items"
+	logger.APIf("plex call: GET %s", endpoint)
+	respBody, err := doPlexGET(client, endpoint, cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	var out plexSectionAllResponse
+	if err := xml.Unmarshal(respBody, &out); err != nil {
+		return nil, err
+	}
+	items := make([]plexLibraryItem, 0, len(out.Metadata)+len(out.Videos))
+	items = append(items, out.Metadata...)
+	items = append(items, out.Videos...)
+	return items, nil
 }
 
 
@@ -1396,37 +1556,239 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
+func terminalSizeFromEnv() (int, int) {
+	width := 100
+	height := 30
+	if raw := strings.TrimSpace(os.Getenv("COLUMNS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 60 {
+			width = parsed
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("LINES")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 12 {
+			height = parsed
+		}
+	}
+	return width, height
+}
+
+func isInteractiveTerminal() bool {
+	inInfo, inErr := os.Stdin.Stat()
+	outInfo, outErr := os.Stdout.Stat()
+	if inErr != nil || outErr != nil {
+		return false
+	}
+	return (inInfo.Mode()&os.ModeCharDevice) != 0 && (outInfo.Mode()&os.ModeCharDevice) != 0
+}
+
+func uiSeparator(width int) string {
+	if width < 1 {
+		width = 1
+	}
+	return strings.Repeat("=", width)
+}
+
+func fitToWidth(in string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(in)
+	if len(runes) > width {
+		return string(runes[:width])
+	}
+	return string(runes) + strings.Repeat(" ", width-len(runes))
+}
+
+func uiHeaderRow(appName, dateText string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	left := []rune(appName)
+	right := []rune(dateText)
+	if len(left)+len(right)+1 > width {
+		leftMax := width - len(right) - 1
+		if leftMax < 1 {
+			leftMax = width
+			right = nil
+		}
+		if leftMax < len(left) {
+			left = left[:leftMax]
+		}
+	}
+	spaceLen := width - len(left) - len(right)
+	if spaceLen < 1 {
+		spaceLen = 1
+	}
+	return string(left) + strings.Repeat(" ", spaceLen) + string(right)
+}
+
+func renderClassicPromptScreen(content []string, prompt, feedback string) {
+	if !isInteractiveTerminal() {
+		for _, line := range content {
+			fmt.Println(line)
+		}
+		if feedback != "" {
+			fmt.Printf("Feedback: %s\n", feedback)
+		}
+		fmt.Print(prompt)
+		return
+	}
+	width, height := terminalSizeFromEnv()
+	if height < 12 {
+		height = 12
+	}
+	contentHeight := height - 6
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	fmt.Print("\033[2J\033[H")
+	dateText := time.Now().Format("2006-01-02")
+	header := uiHeaderRow(appDisplayName, dateText, width)
+	subHeader := uiHeaderRow(appDisplayName+" interactive", dateText, width)
+	fmt.Println(fitToWidth(header, width))
+	fmt.Println(fitToWidth(subHeader, width))
+	fmt.Println(uiSeparator(width))
+
+	for i := 0; i < contentHeight; i++ {
+		if i < len(content) {
+			fmt.Println(fitToWidth(content[i], width))
+		} else {
+			fmt.Println(fitToWidth("", width))
+		}
+	}
+	fmt.Println(uiSeparator(width))
+	fmt.Println(fitToWidth(prompt, width))
+	fmt.Println(fitToWidth(feedback, width))
+}
+
+func promptWithClassicLayout(content []string, prompt, feedback string) (string, error) {
+	renderClassicPromptScreen(content, prompt, feedback)
+	input, err := stdinReader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return strings.TrimSpace(input), nil
+}
+
+func classicDataAreaHeight() int {
+	if !isInteractiveTerminal() {
+		return 24
+	}
+	_, height := terminalSizeFromEnv()
+	if height < 12 {
+		height = 12
+	}
+	contentHeight := height - 6
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	return contentHeight
+}
+
+func pageSlice(totalCount, page, pageSize int) (start, end, totalPages int) {
+	if pageSize <= 0 {
+		pageSize = 1
+	}
+	if totalCount < 0 {
+		totalCount = 0
+	}
+	totalPages = 1
+	if totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+	}
+	if page < 0 {
+		page = 0
+	}
+	if page >= totalPages {
+		page = totalPages - 1
+	}
+	if page < 0 {
+		page = 0
+	}
+	start = page * pageSize
+	end = start + pageSize
+	if end > totalCount {
+		end = totalCount
+	}
+	return start, end, totalPages
+}
+
+func parsePageCommand(input string) int {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "f", "n":
+		return 1
+	case "b":
+		return -1
+	default:
+		return 0
+	}
+}
+
 func selectSections(sections []plexSection) ([]plexSection, error) {
 	defaultSelection := defaultSelectionInput(sections)
-	for idx, s := range sections {
-		fmt.Printf("[%d] %s (%s)\n", idx+1, s.Title, s.Type)
+	feedback := ""
+	dataHeight := classicDataAreaHeight()
+	page := 0
+	headerLines := []string{"Select library number(s) using commas, or type all.", ""}
+	itemRows := dataHeight - len(headerLines)
+	if itemRows < 1 {
+		itemRows = 1
 	}
-	if defaultSelection == "" {
-		fmt.Print("Select library number(s) (comma-separated) or 'all': ")
-	} else {
-		fmt.Printf("Select library number(s) (comma-separated) or 'all' [%s]: ", defaultSelection)
-	}
-	input, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	if strings.TrimSpace(input) == "" && defaultSelection != "" {
-		input = defaultSelection
-	}
+	for {
+		start, end, totalPages := pageSlice(len(sections), page, itemRows)
+		page = start / itemRows
+		content := make([]string, 0, len(headerLines)+(end-start)+1)
+		content = append(content, headerLines...)
+		for idx := start; idx < end; idx++ {
+			s := sections[idx]
+			content = append(content, fmt.Sprintf("[%d] %s (%s)", idx+1, s.Title, s.Type))
+		}
+		if totalPages > 1 {
+			content = append(content, "")
+			content = append(content, fmt.Sprintf("Page %d/%d - F or N next, B back", page+1, totalPages))
+		}
 
-	indices, err := parseSelectionInput(input, len(sections))
-	if err != nil {
-		return nil, err
+		prompt := "Input: library selection"
+		if defaultSelection != "" {
+			prompt = fmt.Sprintf("Input: library selection [%s]", defaultSelection)
+		}
+		if totalPages > 1 {
+			prompt += " | F/N/B"
+		}
+		input, err := promptWithClassicLayout(content, prompt, feedback)
+		if err != nil {
+			return nil, err
+		}
+		if move := parsePageCommand(input); move != 0 && totalPages > 1 {
+			nextPage := page + move
+			if nextPage < 0 || nextPage >= totalPages {
+				feedback = "Already at boundary page."
+				continue
+			}
+			page = nextPage
+			feedback = ""
+			continue
+		}
+		if input == "" && defaultSelection != "" {
+			input = defaultSelection
+		}
+		indices, err := parseSelectionInput(input, len(sections))
+		if err != nil {
+			feedback = "Invalid selection. Use list numbers, commas, or all."
+			continue
+		}
+		if err := saveSelectionMemory(selectionKeysFromIndices(sections, indices)); err != nil {
+			feedback = fmt.Sprintf("Selected. Warning: failed to save selection memory: %v", err)
+		} else {
+			feedback = "Selection accepted."
+		}
+		selected := make([]plexSection, 0, len(indices))
+		for _, idx := range indices {
+			selected = append(selected, sections[idx])
+		}
+		return selected, nil
 	}
-	if err := saveSelectionMemory(selectionKeysFromIndices(sections, indices)); err != nil {
-		fmt.Printf("%s failed to save selection memory: %v\n", colorizeLevel("WARNING"), err)
-	}
-
-	selected := make([]plexSection, 0, len(indices))
-	for _, idx := range indices {
-		selected = append(selected, sections[idx])
-	}
-	return selected, nil
 }
 
 func selectionKeysFromIndices(sections []plexSection, indices []int) []string {
@@ -1508,13 +1870,256 @@ func selectSingleSection(sections []plexSection) (plexSection, error) {
 	return selected[0], nil
 }
 
+func selectCollectionByPrefix(collections []plexCollection) (plexCollection, error) {
+	if len(collections) == 0 {
+		return plexCollection{}, errors.New("no collections returned by Plex")
+	}
+	feedback := ""
+	for {
+		prefix, err := promptCollectionPrefix(feedback)
+		if err != nil {
+			return plexCollection{}, err
+		}
+		matches := filterCollectionsByPrefix(collections, prefix)
+		if len(matches) == 0 {
+			feedback = fmt.Sprintf("No collections start with %q", prefix)
+			continue
+		}
+		if feedback != "" {
+			feedback = ""
+		}
+		if exact, ok := exactCollectionMatch(matches, prefix); ok {
+			proceed, err := promptYesNo(fmt.Sprintf("Proceed using %q (%s)", exact.Title, exact.RatingKey))
+			if err != nil {
+				return plexCollection{}, err
+			}
+			if !proceed {
+				return plexCollection{}, nil
+			}
+			return exact, nil
+		}
+		chosen, err := promptCollectionChoice(matches)
+		if err != nil {
+			return plexCollection{}, err
+		}
+		proceed, err := promptYesNo(fmt.Sprintf("Proceed using %q (%s)", chosen.Title, chosen.RatingKey))
+		if err != nil {
+			return plexCollection{}, err
+		}
+		if !proceed {
+			return plexCollection{}, nil
+		}
+		return chosen, nil
+	}
+}
+
+func promptCollectionPrefix(feedback string) (string, error) {
+	content := []string{
+		"Collection selection",
+		"",
+		"Enter at least the first 3 characters of the collection name.",
+		"Matching collections will be shown in the content area.",
+	}
+	for {
+		input, err := promptWithClassicLayout(content, "Input: collection prefix (min 3)", feedback)
+		if err != nil {
+			return "", err
+		}
+		prefix := strings.TrimSpace(input)
+		if prefix == "" {
+			return "", errors.New("collection selection canceled")
+		}
+		if len([]rune(prefix)) < 3 {
+			feedback = "Enter at least 3 characters."
+			continue
+		}
+		return prefix, nil
+	}
+}
+
+func filterCollectionsByPrefix(collections []plexCollection, prefix string) []plexCollection {
+	needle := strings.ToLower(strings.TrimSpace(prefix))
+	if needle == "" {
+		return nil
+	}
+	matches := make([]plexCollection, 0, len(collections))
+	for _, collection := range collections {
+		if strings.HasPrefix(strings.ToLower(collection.Title), needle) {
+			matches = append(matches, collection)
+		}
+	}
+	return matches
+}
+
+func exactCollectionMatch(collections []plexCollection, prefix string) (plexCollection, bool) {
+	needle := strings.ToLower(strings.TrimSpace(prefix))
+	for _, collection := range collections {
+		if strings.ToLower(strings.TrimSpace(collection.Title)) == needle {
+			return collection, true
+		}
+	}
+	return plexCollection{}, false
+}
+
+func promptCollectionChoice(collections []plexCollection) (plexCollection, error) {
+	feedback := ""
+	dataHeight := classicDataAreaHeight()
+	page := 0
+	headerLines := []string{"Multiple collections matched. Select one:", ""}
+	itemRows := dataHeight - len(headerLines)
+	if itemRows < 1 {
+		itemRows = 1
+	}
+	for {
+		start, end, totalPages := pageSlice(len(collections), page, itemRows)
+		page = start / itemRows
+		content := make([]string, 0, len(headerLines)+(end-start)+1)
+		content = append(content, headerLines...)
+		for idx := start; idx < end; idx++ {
+			collection := collections[idx]
+			content = append(content, fmt.Sprintf("[%d] %s (%s)", idx+1, collection.Title, collection.RatingKey))
+		}
+		if totalPages > 1 {
+			content = append(content, "")
+			content = append(content, fmt.Sprintf("Page %d/%d - F or N next, B back", page+1, totalPages))
+		}
+
+		prompt := fmt.Sprintf("Input: collection number [%d-%d]", start+1, end)
+		if totalPages > 1 {
+			prompt += " | F/N/B"
+		}
+		input, err := promptWithClassicLayout(content, prompt, feedback)
+		if err != nil {
+			return plexCollection{}, err
+		}
+		if move := parsePageCommand(input); move != 0 && totalPages > 1 {
+			nextPage := page + move
+			if nextPage < 0 || nextPage >= totalPages {
+				feedback = "Already at boundary page."
+				continue
+			}
+			page = nextPage
+			feedback = ""
+			continue
+		}
+		choice := strings.TrimSpace(input)
+		if choice == "" {
+			choice = strconv.Itoa(start + 1)
+		}
+		index, err := strconv.Atoi(choice)
+		if err != nil || index < 1 || index > len(collections) {
+			feedback = "Please enter a valid collection number."
+			continue
+		}
+		return collections[index-1], nil
+	}
+}
+
+func promptYesNo(question string) (bool, error) {
+	content := []string{question}
+	feedback := ""
+	for {
+		input, err := promptWithClassicLayout(content, "Input: Y or N", feedback)
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(input)) {
+		case "y", "yes":
+			return true, nil
+		case "n", "no", "":
+			return false, nil
+		default:
+			feedback = "Please answer Y or N."
+		}
+	}
+}
+
+func pathCleanCollectionTitles(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
+	selectedSection, err := selectSingleSection(sections)
+	if err != nil {
+		return err
+	}
+	logger.Infof("path clean: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+
+	collections, err := fetchCollections(client, cfg, selectedSection.Key, logger)
+	if err != nil {
+		return err
+	}
+	logger.Infof("path clean: scanned collections=%d", len(collections))
+
+	selectedCollection, err := selectCollectionByPrefix(collections)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(selectedCollection.RatingKey) == "" {
+		logger.Println("path clean: canceled")
+		return nil
+	}
+	logger.Infof("path clean: selected collection=%s (%s)", selectedCollection.Title, selectedCollection.RatingKey)
+
+	items, err := fetchCollectionItems(client, cfg, selectedCollection.RatingKey, logger)
+	if err != nil {
+		return err
+	}
+	logger.Infof("path clean: scanned items=%d", len(items))
+	progress := newProgressTracker(logger, "path clean", len(items))
+	defer progress.Finish()
+
+	updated := 0
+	skipped := 0
+	reportRows := make([][]string, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.RatingKey) == "" {
+			skipped++
+			logger.Warningf("path clean: skipping item with empty rating key")
+			progress.Advance()
+			continue
+		}
+		filePath := libraryItemFilePath(item)
+		if strings.TrimSpace(filePath) == "" {
+			skipped++
+			logger.Warningf("path clean: skipping item with empty file path ratingKey=%s", item.RatingKey)
+			progress.Advance()
+			continue
+		}
+		before := strings.TrimSpace(item.Title)
+		after := pathCleanTitleFromFilePath(filePath, cfg.Clean.Replacements)
+		if after == "" || after == before {
+			skipped++
+			progress.Advance()
+			continue
+		}
+		if err := updateLibraryItemTitle(client, cfg, item.RatingKey, after, logger); err != nil {
+			return fmt.Errorf("update path-clean title ratingKey=%s: %w", item.RatingKey, err)
+		}
+		updated++
+		reportRows = append(reportRows, []string{selectedCollection.Title, item.RatingKey, filePath, before, after})
+		logger.Successf("path clean: title updated ratingKey=%s before=%q after=%q", item.RatingKey, before, after)
+		progress.Advance()
+	}
+
+	reportPath := uniquePathCleanReportPath(cfg.OutputDir, time.Now())
+	if err := writeCSVReport(reportPath, []string{"collection", "rating_key", "file_path", "title_before", "title_after"}, reportRows); err != nil {
+		logger.Warningf("path clean: failed to write report: %v", err)
+	} else {
+		logger.Infof("path clean: report written: %s (%d rows)", reportPath, len(reportRows))
+	}
+
+	logger.Successf("path clean complete: updated=%d skipped=%d", updated, skipped)
+	return nil
+}
+
 func promptCloneName(defaultName string) (string, error) {
 	if strings.TrimSpace(defaultName) == "" {
 		defaultName = "library-clone"
 	}
-	fmt.Printf("New library name [%s]: ", defaultName)
-	input, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	content := []string{
+		"Library clone",
+		"",
+		"Enter a new library name or press Enter to accept the default.",
+	}
+	input, err := promptWithClassicLayout(content, fmt.Sprintf("Input: new library name [%s]", defaultName), "")
+	if err != nil {
 		return "", err
 	}
 	name := strings.TrimSpace(input)
@@ -2481,8 +3086,7 @@ func libraryItemTitle(item plexLibraryItem) string {
 			if filePath == "" {
 				continue
 			}
-			base := filepath.Base(filePath)
-			base = strings.TrimSuffix(base, filepath.Ext(base))
+			base := plexPathStem(filePath)
 			if strings.TrimSpace(base) != "" {
 				return base
 			}
@@ -2528,20 +3132,100 @@ func seedCleanTitles(title, sortTitle, fileStem string) (string, string) {
 }
 
 func libraryItemFileStem(item plexLibraryItem) string {
+	return plexPathStem(libraryItemFilePath(item))
+}
+
+func libraryItemFilePath(item plexLibraryItem) string {
 	for _, media := range item.Media {
 		for _, part := range media.Parts {
 			filePath := strings.TrimSpace(part.File)
 			if filePath == "" {
 				continue
 			}
-			base := filepath.Base(filePath)
-			stem := strings.TrimSuffix(base, filepath.Ext(base))
-			if strings.TrimSpace(stem) != "" {
-				return stem
-			}
+			return filePath
 		}
 	}
 	return ""
+}
+
+func plexPathParts(filePath string) []string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(filePath), "\\", "/")
+	parts := strings.Split(normalized, "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if len(out) == 0 && strings.HasSuffix(part, ":") {
+			continue
+			}
+		out = append(out, part)
+	}
+	return out
+}
+
+func plexPathStem(filePath string) string {
+	parts := plexPathParts(filePath)
+	if len(parts) == 0 {
+		return ""
+	}
+	base := parts[len(parts)-1]
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+func pathCleanTitleFromFilePath(filePath string, replacements map[string]string) string {
+	parts := plexPathParts(filePath)
+	if len(parts) == 0 {
+		return ""
+	}
+	stem := pathCleanSegment(plexPathStem(filePath), replacements)
+	segments := make([]string, 0, len(parts))
+	for idx := len(parts) - 2; idx >= 0; idx-- {
+		segment := pathCleanSegment(parts[idx], replacements)
+		if segment == "" {
+			continue
+		}
+		segments = append(segments, segment)
+	}
+	if stem == "" {
+		stem = strings.Join(segments, " - ")
+		if stem == "" {
+			return ""
+		}
+		return stem
+	}
+	if len(segments) == 0 {
+		return stem
+	}
+	return stem + " - " + strings.Join(segments, " - ")
+}
+
+func pathCleanSegment(in string, replacements map[string]string) string {
+	trimmed := strings.TrimSpace(in)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "_", " ")
+	trimmed = strings.ReplaceAll(trimmed, ".", " ")
+	trimmed = strings.ReplaceAll(trimmed, "-", " ")
+	trimmed = strings.ReplaceAll(trimmed, "+", " ")
+	trimmed = strings.ReplaceAll(trimmed, "&", " and ")
+	trimmed = applyCustomReplacements(trimmed, replacements)
+	var b strings.Builder
+	for _, r := range trimmed {
+		switch {
+		case unicode.IsLetter(r), unicode.IsNumber(r), unicode.IsSpace(r), r == '@':
+			b.WriteRune(r)
+		default:
+			b.WriteByte(' ')
+		}
+	}
+	out := strings.Join(strings.Fields(b.String()), " ")
+	if out == "" {
+		return ""
+	}
+	return out
 }
 
 func joinPlexLabels(labels []plexLabel) string {
@@ -3208,14 +3892,19 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 	}
 	logger.Printf("output dir ready: %s", outDir)
 	collections = disambiguateCollectionsByGUID(collections)
+	reportRows := make([][]string, 0, len(collections))
 	progress := newProgressTracker(logger, "gen posters", len(collections))
 	defer progress.Finish()
 	for _, collection := range collections {
-		outputPath := buildOutputPath(outDir, collection.Title, cfg.TemplateImage)
-		logger.Printf("creating poster: collection=%q guid=%q output=%s", collection.Title, collection.GUID, outputPath)
-		if err := renderCollectionPoster(cfg, collection.Title, outputPath); err != nil {
+		templatePath, backgroundName := selectPosterTemplate(cfg, collection.Title)
+		posterCfg := cfg
+		posterCfg.TemplateImage = templatePath
+		outputPath := buildOutputPath(outDir, collection.Title, templatePath)
+		logger.Printf("creating poster: collection=%q guid=%q background=%s output=%s", collection.Title, collection.GUID, backgroundName, outputPath)
+		if err := renderCollectionPoster(posterCfg, collection.Title, outputPath); err != nil {
 			return fmt.Errorf("render %q: %w", collection.Title, err)
 		}
+		reportRows = append(reportRows, []string{collection.Title, collection.GUID, collection.RatingKey, backgroundName, outputPath})
 		logger.Successf("poster created: %s", outputPath)
 		if upload {
 			if err := uploadCollectionPoster(client, cfg, collection, outputPath, logger); err != nil {
@@ -3224,7 +3913,35 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 		}
 		progress.Advance()
 	}
+	reportPath := uniquePosterReportPath(outDir, time.Now())
+	if err := writeCSVReport(reportPath, []string{"collection", "guid", "rating_key", "background", "output_file"}, reportRows); err != nil {
+		logger.Warningf("poster report: failed to write: %v", err)
+	} else {
+		logger.Infof("poster report: written %s (%d rows)", reportPath, len(reportRows))
+	}
 	return nil
+}
+
+func selectPosterTemplate(cfg Config, collectionTitle string) (string, string) {
+	key := normalizeCollectionMatchKey(collectionTitle)
+	if key != "" {
+		if strings.TrimSpace(cfg.AdminTemplateImage) != "" {
+			if _, ok := cfg.AdminCollectionSet[key]; ok {
+				return cfg.AdminTemplateImage, "admin"
+			}
+		}
+		if strings.TrimSpace(cfg.StudioTemplateImage) != "" {
+			if _, ok := cfg.StudioCollectionSet[key]; ok {
+				return cfg.StudioTemplateImage, "studio"
+			}
+		}
+		if strings.TrimSpace(cfg.TypeTemplateImage) != "" {
+			if _, ok := cfg.TypeCollectionSet[key]; ok {
+				return cfg.TypeTemplateImage, "type"
+			}
+		}
+	}
+	return cfg.TemplateImage, "default"
 }
 
 func uploadCollectionPoster(client *http.Client, cfg Config, collection plexCollection, imagePath string, logger *AppLogger) error {
@@ -3421,12 +4138,14 @@ func renderCollectionPoster(cfg Config, text, outputPath string) error {
 
 	w := rgba.Bounds().Dx()
 	h := rgba.Bounds().Dy()
-	maxTextWidth := w - 40
+	horizontalPadding, verticalPadding := posterTextPadding(cfg, w, h)
+	maxTextWidth := w - horizontalPadding*2
 	if maxTextWidth < 20 {
+		horizontalPadding = 0
 		maxTextWidth = w
 	}
-	textLines := wrapTextToWidth(face, forceLineBreakAfterNumber(text), maxTextWidth)
-	linePositions := centeredTextDots(face, textLines, w, h, cfg.Font.YOffset)
+	textLines := wrapTextToWidth(face, posterDisplayText(text), maxTextWidth)
+	linePositions := centeredTextDots(face, textLines, w, h, cfg.Font.YOffset, horizontalPadding, verticalPadding)
 
 	if cfg.Font.GlowRadius > 0 {
 		for _, line := range linePositions {
@@ -3492,9 +4211,29 @@ type textDot struct {
 	Y    int
 }
 
-func centeredTextDots(face font.Face, lines []string, width, height, yOffset int) []textDot {
+func centeredTextDots(face font.Face, lines []string, width, height, yOffset, paddingX, paddingY int) []textDot {
 	if len(lines) == 0 {
 		lines = []string{"untitled"}
+	}
+	if paddingX < 0 {
+		paddingX = 0
+	}
+	if paddingY < 0 {
+		paddingY = 0
+	}
+	if width <= paddingX*2 {
+		paddingX = 0
+	}
+	if height <= paddingY*2 {
+		paddingY = 0
+	}
+	availableWidth := width - paddingX*2
+	if availableWidth <= 0 {
+		availableWidth = width
+	}
+	availableHeight := height - paddingY*2
+	if availableHeight <= 0 {
+		availableHeight = height
 	}
 
 	lineHeight := face.Metrics().Height.Ceil()
@@ -3502,18 +4241,75 @@ func centeredTextDots(face font.Face, lines []string, width, height, yOffset int
 		lineHeight = 1
 	}
 	totalHeight := lineHeight * len(lines)
-	top := (height-totalHeight)/2 + yOffset
+	top := paddingY + (availableHeight-totalHeight)/2 + yOffset
+	if top < paddingY {
+		top = paddingY
+	}
 
 	dots := make([]textDot, 0, len(lines))
 	for idx, line := range lines {
 		bounds, _ := font.BoundString(face, line)
 		textWidth := (bounds.Max.X - bounds.Min.X).Ceil()
-		x := (width-textWidth)/2 - bounds.Min.X.Ceil()
+		x := paddingX + (availableWidth-textWidth)/2 - bounds.Min.X.Ceil()
+		if x < paddingX {
+			x = paddingX
+		}
 		yTop := top + idx*lineHeight
 		y := yTop - bounds.Min.Y.Ceil()
 		dots = append(dots, textDot{Text: line, X: x, Y: y})
 	}
 	return dots
+}
+
+func posterTextPadding(cfg Config, width, height int) (int, int) {
+	fontSizePad := int(math.Ceil(cfg.Font.Size * 0.75))
+	if fontSizePad < 24 {
+		fontSizePad = 24
+	}
+	effectPad := cfg.Font.GlowRadius + maxInt(absInt(cfg.Font.ShadowOffsetX), absInt(cfg.Font.ShadowOffsetY)) + 8
+	if effectPad < 24 {
+		effectPad = 24
+	}
+	horizontal := maxInt(fontSizePad, effectPad)
+	vertical := maxInt(int(math.Ceil(cfg.Font.Size*0.9)), effectPad)
+	if width > 0 {
+		horizontal = minInt(horizontal, maxInt(0, width/4))
+	}
+	if height > 0 {
+		vertical = minInt(vertical, maxInt(0, height/4))
+	}
+	return horizontal, vertical
+}
+
+func posterDisplayText(text string) string {
+	return strings.ToUpper(forceLineBreakAfterNumber(text))
+}
+
+func maxInt(values ...int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	best := values[0]
+	for _, value := range values[1:] {
+		if value > best {
+			best = value
+		}
+	}
+	return best
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func wrapTextToWidth(face font.Face, text string, maxWidth int) []string {

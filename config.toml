@@ -1,4 +1,10 @@
-template_image = "./templates/template-2.png"
+template_image = "./templates/template-general.png"
+type_template_image = "./templates/template-type.png"
+studio_template_image = "./templates/template-studio.png"
+admin_template_image = "./templates/template-admin.png"
+type_collections_file = "./types-collections.txt"
+studio_collections_file = "./studio-collections.txt"
+admin_collections_file = "./admin-collections.txt"
 output_dir = "./output"
 log_file = "./logs/frantic-postr.log"
 label_config = "./labels.toml"
@@ -7,10 +13,10 @@ collection_config = "./collections.toml"
 [plex]
 base_url = "http://192.168.1.195:32400"
 token = "yooyQkcTthoasndvsQnU"
-retries = 3
+retries = 6
 workers = 5
 retry_base_ms = 500
-retry_max_ms = 30000
+retry_max_ms = 50000
 
 
 

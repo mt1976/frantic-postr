@@ -1,4 +1,10 @@
 template_image = "./template.png"
+type_template_image = "./templates/template-1.png"
+studio_template_image = "./templates/template-3.png"
+admin_template_image = "./templates/template-2.png"
+type_collections_file = "./types-collections.txt"
+studio_collections_file = "./studio-collections.txt"
+admin_collections_file = "./admin-collections.txt"
 output_dir = "./output"
 log_file = "./frantic-postr.log"
 
