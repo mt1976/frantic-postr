@@ -4,19 +4,19 @@ A Go CLI that connects to Plex, lets you choose a library, reads all collections
 
 ## Run
 
-1. Copy `config.example.toml` to `config.toml` and update values.
-2. Copy `config.plex.local.example.toml` to `config.plex.local.toml` and set your Plex URL/token.
-3. Keep `plex_config = "./config.plex.local.toml"` in `config.toml` so secrets stay outside your main config.
+1. Copy `config/config.example.toml` to `config/config.toml` and update values.
+2. Copy `config/config.plex.example.toml` to `config/config.plex.toml` and set your Plex URL/token.
+3. Keep `plex_config = "./config.plex.toml"` in `config/config.toml` so secrets stay outside your main config.
 4. Ensure your template image exists (`.png` or `.jpg`).
 5. Run the explicit poster generation mode:
 
 ```bash
-go run . -config config.toml -gen-posters
+go run . -config config/config.toml -gen-posters
 ```
 
 Running the app without a mode flag prints the help text instead of starting a workflow.
 
-`config.plex.local.toml` is intended to stay local and is ignored by git.
+`config/config.plex.toml` is intended to stay local and is ignored by git.
 
 Library selection memory:
 
@@ -27,13 +27,13 @@ Library selection memory:
 To also upload each generated poster and set it as that collection's poster in Plex during poster generation, add `-upload-posters`:
 
 ```bash
-go run . -config config.toml -gen-posters -upload-posters
+go run . -config config/config.toml -gen-posters -upload-posters
 ```
 
 To keep request chatter out of the terminal while still writing everything to the log file, add `-quiet`:
 
 ```bash
-go run . -config config.toml -gen-posters -quiet
+go run . -config config/config.toml -gen-posters -quiet
 ```
 
 Interactive prompt layout:
@@ -53,28 +53,31 @@ You can now export collections from one library and import them into another lib
 1. Export collections from a single selected source library into a JSON file:
 
 ```bash
-go run . -config config.toml -coll-export -coll-file collections-export.json
+go run . -config config/config.toml -coll-export
 ```
+
+By default, `-coll-file` values that are just filenames are stored under `output/collections-export/`.
+So the default export location is `output/collections-export/collections-export.json`.
 
 1. Import that file into a single selected target library:
 
 ```bash
-go run . -config config.toml -coll-import -coll-file collections-export.json
+go run . -config config/config.toml -coll-import
 ```
 
 There is also a compatibility alias for import mode:
 
 ```bash
-go run . -config config.toml -coll-impot -coll-file collections-export.json
+go run . -config config/config.toml -coll-impot
 ```
 
-To inject smart collections from `collections.toml` into a selected library, add `-coll-inject`:
+To inject smart collections from `config/collections.toml` into a selected library, add `-coll-inject`:
 
 ```bash
-go run . -config config.toml -coll-inject
+go run . -config config/config.toml -coll-inject
 ```
 
-Collection definitions live in `collections.toml` and use repeated `[[collection.lookup]]` tables. Put the shared Plex prefix in `base_uri`, then keep each lookup's `content` to just the variable tail, for example `dovi=1` or `push=1&resolution=2.7k&or=1&resolution=4k&pop=1`. The library section id is rewritten automatically when the collection is injected into the selected target library.
+Collection definitions live in `config/collections.toml` and use repeated `[[collection.lookup]]` tables. Put the shared Plex prefix in `base_uri`, then keep each lookup's `content` to just the variable tail, for example `dovi=1` or `push=1&resolution=2.7k&or=1&resolution=4k&pop=1`. The library section id is rewritten automatically when the collection is injected into the selected target library.
 
 ## Poster Background Routing
 
@@ -88,10 +91,10 @@ Poster generation can use four template backgrounds:
 Example config:
 
 ```toml
-template_image = "./templates/template-3.png"
-type_template_image = "./templates/template-1.png"
-studio_template_image = "./templates/template-3.png"
-admin_template_image = "./templates/template-2.png"
+template_image = "../templates/template-3.png"
+type_template_image = "../templates/template-1.png"
+studio_template_image = "../templates/template-3.png"
+admin_template_image = "../templates/template-2.png"
 type_collections_file = "./types-collections.txt"
 studio_collections_file = "./studio-collections.txt"
 admin_collections_file = "./admin-collections.txt"
@@ -114,13 +117,13 @@ Poster output details:
 To find duplicate collection names in a selected library and write a CSV report with item counts, use `-coll-dupes`:
 
 ```bash
-go run . -config config.toml -coll-dupes
+go run . -config config/config.toml -coll-dupes
 ```
 
 To delete every non-smart collection from a selected library and write a CSV audit, use `-coll-delete-non-smart`:
 
 ```bash
-go run . -config config.toml -coll-delete-non-smart
+go run . -config config/config.toml -coll-delete-non-smart
 ```
 
 Notes:
@@ -140,7 +143,7 @@ Clone mode creates a new Plex library from a selected source library by copying:
 Run clone mode:
 
 ```bash
-go run . -config config.toml -clone
+go run . -config config/config.toml -clone
 ```
 
 Flow:
@@ -161,25 +164,25 @@ Label mode scans one selected library and adds labels to items whose title conta
 Example:
 
 ```bash
-go run . -config config.toml -label -find abandoned -add urbsex,abandoned
+go run . -config config/config.toml -label -find abandoned -add urbsex,abandoned
 ```
 
 You can quote `-find` to include spaces:
 
 ```bash
-go run . -config config.toml -label -find "abandoned house" -add urbsex,abandoned
+go run . -config config/config.toml -label -find "abandoned house" -add urbsex,abandoned
 ```
 
 To also update category tags (Plex Genre tags) using the same `-add` values:
 
 ```bash
-go run . -config config.toml -label -find abandoned -add urbsex,abandoned -update-category
+go run . -config config/config.toml -label -find abandoned -add urbsex,abandoned -update-category
 ```
 
 To update only category tags (and skip label updates):
 
 ```bash
-go run . -config config.toml -label -find abandoned -add urbsex,abandoned -only-category
+go run . -config config/config.toml -label -find abandoned -add urbsex,abandoned -only-category
 ```
 
 You can also define multiple title lookup rules in config and run `-label` without `-find` / `-add`:
@@ -206,7 +209,7 @@ update_category = true
 Run with:
 
 ```bash
-go run . -config config.toml -label
+go run . -config config/config.toml -label
 ```
 
 Behavior:
@@ -230,13 +233,13 @@ Behavior:
 Clean mode scans one selected library and sanitizes item titles for safer searching.
 
 ```bash
-go run . -config config.toml -clean
+go run . -config config/config.toml -clean
 ```
 
 To translate first, explicitly add `-translate`:
 
 ```bash
-go run . -config config.toml -translate -clean
+go run . -config config/config.toml -translate -clean
 ```
 
 Rules:
@@ -273,7 +276,7 @@ Translation is feature-flagged and runs only when `-translate` is provided.
 Translate-only mode (no cleaning):
 
 ```bash
-go run . -config config.toml -translate
+go run . -config config/config.toml -translate
 ```
 
 You can still configure the translation endpoint/API key:
@@ -296,7 +299,7 @@ The app writes posters to `output/<library-name>/` (or `output_dir/<library-name
 Path clean mode scans one selected library, then lets you choose a collection by typing at least the first three characters of its name.
 
 ```bash
-go run . -config config.toml -coll-path-clean
+go run . -config config/config.toml -coll-path-clean
 ```
 
 Flow:
@@ -326,7 +329,7 @@ Notes:
 - Each update is recorded in `output/path-clean/` as a CSV audit.
 - `-coll-path-clean` is exclusive with the other single-mode workflows.
 
-Startup validation is strict: if `plex.base_url` / `plex.token` are missing in both `config.toml` and `plex_config`, or required paths like `template_image` / `output_dir` do not exist, the app logs an error and exits.
+Startup validation is strict: if `plex.base_url` / `plex.token` are missing in both `config/config.toml` and `plex_config`, or required paths like `template_image` / `output_dir` do not exist, the app logs an error and exits.
 
 ## Logging And Retries
 
@@ -342,7 +345,7 @@ Logs now include level tags and color output in terminal:
 Disable color output when needed (CI/log parsers/plain terminals):
 
 ```bash
-go run . -config config.toml -no-color
+go run . -config config/config.toml -no-color
 ```
 
 Timeout retries are configurable in `[plex]`:
@@ -359,7 +362,7 @@ When a network operation fails with timeout conditions like `context deadline ex
 Use `-trail` to process as normal but skip all Plex write operations (`PUT`/`POST`).
 
 ```bash
-go run . -config config.toml -trail
+go run . -config config/config.toml -trail
 ```
 
 This works across all modes and logs each skipped write as a warning.

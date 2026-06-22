@@ -258,6 +258,7 @@ type selectionMemory struct {
 }
 
 const selectionMemoryFile = ".frantic-postr-selection.json"
+const collectionTransferDirName = "collections-export"
 
 var (
 	colorOutputEnabled     = true
@@ -473,7 +474,7 @@ type pathCleanReportRow struct {
 }
 
 func main() {
-	configPath := flag.String("config", "config.toml", "Path to config file")
+	configPath := flag.String("config", "config/config.toml", "Path to config file")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
 	quietMode := flag.Bool("quiet", false, "Hide server request logs from terminal output while still writing all logs to the file")
 	trailMode := flag.Bool("trail", false, "Process as normal but do not write updates to Plex")
@@ -487,7 +488,7 @@ func main() {
 	collImport := flag.Bool("coll-import", false, "Import collections from -coll-file into a selected library")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
 	labelMode := flag.Bool("label", false, "Scan a selected library and add labels to items with titles matching -find")
-	collInject := flag.Bool("coll-inject", false, "Inject smart collections from collections.toml into a selected library")
+	collInject := flag.Bool("coll-inject", false, "Inject smart collections from config/collections.toml into a selected library")
 	updateCategoryMode := flag.Bool("update-category", false, "When used with -label, also add values from -add to item category tags")
 	onlyCategoryMode := flag.Bool("only-category", false, "When used with -label, update only category tags from -add and skip label updates")
 	cleanMode := flag.Bool("clean", false, "Clean titles in a selected library by removing unsafe characters")
@@ -564,6 +565,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+	resolvedCollFile := resolveCollectionTransferPath(cfg, *collFile)
 
 	logger, closeLogger, err := setupLogger(cfg.LogFile)
 	if err != nil {
@@ -584,7 +586,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *collFile)
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, resolvedCollFile)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	sections, err := fetchSections(client, cfg, logger)
@@ -707,14 +709,14 @@ func main() {
 		return
 	}
 	if *collExport {
-		if err := exportCollections(client, cfg, sections, *collFile, logger); err != nil {
+		if err := exportCollections(client, cfg, sections, resolvedCollFile, logger); err != nil {
 			logger.Fatalf("collection export failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
 	}
 	if importMode {
-		if err := importCollections(client, cfg, sections, *collFile, logger); err != nil {
+		if err := importCollections(client, cfg, sections, resolvedCollFile, logger); err != nil {
 			logger.Fatalf("collection import failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
@@ -763,6 +765,20 @@ func main() {
 	}
 
 	logger.Println("shutdown: frantic-postr completed")
+}
+
+func resolveCollectionTransferPath(cfg Config, collFilePath string) string {
+	trimmedPath := strings.TrimSpace(collFilePath)
+	if trimmedPath == "" {
+		trimmedPath = "collections-export.json"
+	}
+	if filepath.IsAbs(trimmedPath) {
+		return filepath.Clean(trimmedPath)
+	}
+	if dir := filepath.Dir(trimmedPath); dir != "." {
+		return filepath.Clean(trimmedPath)
+	}
+	return filepath.Join(cfg.OutputDir, collectionTransferDirName, filepath.Base(trimmedPath))
 }
 
 func loadConfig(path string) (Config, error) {
@@ -3495,6 +3511,11 @@ func exportCollections(client *http.Client, cfg Config, sections []plexSection, 
 	if err != nil {
 		return err
 	}
+	if dir := filepath.Dir(exportPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
 	if err := os.WriteFile(exportPath, jsonBytes, 0o644); err != nil {
 		return err
 	}
@@ -3632,7 +3653,7 @@ func createCollection(client *http.Client, cfg Config, sourceSectionKey, targetS
 
 func injectCollections(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
 	if len(cfg.Collection.Lookups) == 0 {
-		return errors.New("invalid flags: -coll-inject requires one or more [[collection.lookup]] entries in collections.toml")
+		return errors.New("invalid flags: -coll-inject requires one or more [[collection.lookup]] entries in config/collections.toml")
 	}
 
 	targetSection, err := selectSingleSection(sections)

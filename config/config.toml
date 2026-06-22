@@ -1,28 +1,28 @@
-template_image = "./template.png"
-type_template_image = "./templates/template-1.png"
-studio_template_image = "./templates/template-3.png"
-admin_template_image = "./templates/template-2.png"
+template_image = "../templates/template-general.png"
+type_template_image = "../templates/template-type.png"
+studio_template_image = "../templates/template-studio.png"
+admin_template_image = "../templates/template-admin.png"
 type_collections_file = "./types-collections.txt"
 studio_collections_file = "./studio-collections.txt"
 admin_collections_file = "./admin-collections.txt"
-output_dir = "./output"
-log_file = "./frantic-postr.log"
+output_dir = "../output"
+log_file = "../logs/frantic-postr.log"
 plex_config = "./config.plex.toml"
-
 label_config = "./labels.toml"
 collection_config = "./collections.toml"
 
 [plex]
-retries = 3
-workers = 1
-retry_base_ms = 1000
-retry_max_ms = 30000
+retries = 6
+workers = 5
+retry_base_ms = 500
+retry_max_ms = 50000
+
 
 
 [clean.replacements]
 "&" = " and "
-"£" = " gbp "
-"$" = " usd "
+"£" = " GBP "
+"$" = " Dollar "
 "FULL MOVIE" = " "
 
 [clean]
@@ -32,13 +32,13 @@ translate_api_key = ""
 translate_rate_limit_per_minute = 10
 
 [font]
-file = ""
-size = 64
+file = "../fonts/Drips.ttf"
+size = 140
 color = "#FFFFFF"
-shadow_color = "#000000"
+shadow_color = "#7b8204"
 shadow_offset_x = 2
 shadow_offset_y = 2
-glow_color = "#000000"
-glow_radius = 3
-glow_alpha = 0.35
+glow_color = "#fbff00"
+glow_radius = 2
+glow_alpha = 0.9
 y_offset = 0

@@ -40,6 +40,24 @@ func TestBuildOutputPathUsesTemplateExtension(t *testing.T) {
 	}
 }
 
+func TestResolveCollectionTransferPathUsesOutputCollectionsExportForBareFilename(t *testing.T) {
+	cfg := Config{OutputDir: "/tmp/output"}
+	got := resolveCollectionTransferPath(cfg, "collections-export.json")
+	expected := filepath.Join("/tmp/output", "collections-export", "collections-export.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestResolveCollectionTransferPathKeepsExplicitDirectory(t *testing.T) {
+	cfg := Config{OutputDir: "/tmp/output"}
+	got := resolveCollectionTransferPath(cfg, "custom/collections-export.json")
+	expected := filepath.Clean("custom/collections-export.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
 func TestSanitizeFileName(t *testing.T) {
 	got := sanitizeFileName(`  A/B:C*D?"E<F>G|  `)
 	if got != "A_B-C_D'EFG_" {
