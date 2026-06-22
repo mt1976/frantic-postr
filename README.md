@@ -5,14 +5,18 @@ A Go CLI that connects to Plex, lets you choose a library, reads all collections
 ## Run
 
 1. Copy `config.example.toml` to `config.toml` and update values.
-2. Ensure your template image exists (`.png` or `.jpg`).
-3. Run the explicit poster generation mode:
+2. Copy `config.plex.local.example.toml` to `config.plex.local.toml` and set your Plex URL/token.
+3. Keep `plex_config = "./config.plex.local.toml"` in `config.toml` so secrets stay outside your main config.
+4. Ensure your template image exists (`.png` or `.jpg`).
+5. Run the explicit poster generation mode:
 
 ```bash
 go run . -config config.toml -gen-posters
 ```
 
 Running the app without a mode flag prints the help text instead of starting a workflow.
+
+`config.plex.local.toml` is intended to stay local and is ignored by git.
 
 Library selection memory:
 
@@ -322,7 +326,7 @@ Notes:
 - Each update is recorded in `output/path-clean/` as a CSV audit.
 - `-coll-path-clean` is exclusive with the other single-mode workflows.
 
-Startup validation is strict: if `plex.base_url` / `plex.token` are missing, or required paths like `template_image` / `output_dir` do not exist, the app logs an error and exits.
+Startup validation is strict: if `plex.base_url` / `plex.token` are missing in both `config.toml` and `plex_config`, or required paths like `template_image` / `output_dir` do not exist, the app logs an error and exits.
 
 ## Logging And Retries
 

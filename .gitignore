@@ -26,6 +26,7 @@ go.work.sum
 
 # env file
 .env
+config.plex.toml
 
 # Editor/IDE
 # .idea/

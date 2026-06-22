@@ -66,22 +66,23 @@ type Config struct {
 		TranslateAPIKey             string            `toml:"translate_api_key"`
 		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
-	TemplateImage        string `toml:"template_image"`
-	TypeTemplateImage    string `toml:"type_template_image"`
-	StudioTemplateImage  string `toml:"studio_template_image"`
-	AdminTemplateImage   string `toml:"admin_template_image"`
-	TypeCollectionsFile  string `toml:"type_collections_file"`
-	StudioCollectionsFile string `toml:"studio_collections_file"`
-	AdminCollectionsFile string `toml:"admin_collections_file"`
-	OutputDir            string `toml:"output_dir"`
-	LogFile              string `toml:"log_file"`
-	LabelConfigFile      string `toml:"label_config"`
-	CollectionConfigFile string `toml:"collection_config"`
-	CollectionBaseURI    string `toml:"-"`
-	TypeCollectionSet    map[string]struct{} `toml:"-"`
-	StudioCollectionSet  map[string]struct{} `toml:"-"`
-	AdminCollectionSet   map[string]struct{} `toml:"-"`
-	Font                 struct {
+	TemplateImage         string              `toml:"template_image"`
+	TypeTemplateImage     string              `toml:"type_template_image"`
+	StudioTemplateImage   string              `toml:"studio_template_image"`
+	AdminTemplateImage    string              `toml:"admin_template_image"`
+	TypeCollectionsFile   string              `toml:"type_collections_file"`
+	StudioCollectionsFile string              `toml:"studio_collections_file"`
+	AdminCollectionsFile  string              `toml:"admin_collections_file"`
+	OutputDir             string              `toml:"output_dir"`
+	LogFile               string              `toml:"log_file"`
+	PlexConfigFile        string              `toml:"plex_config"`
+	LabelConfigFile       string              `toml:"label_config"`
+	CollectionConfigFile  string              `toml:"collection_config"`
+	CollectionBaseURI     string              `toml:"-"`
+	TypeCollectionSet     map[string]struct{} `toml:"-"`
+	StudioCollectionSet   map[string]struct{} `toml:"-"`
+	AdminCollectionSet    map[string]struct{} `toml:"-"`
+	Font                  struct {
 		File          string  `toml:"file"`
 		Size          float64 `toml:"size"`
 		Color         string  `toml:"color"`
@@ -773,6 +774,13 @@ func loadConfig(path string) (Config, error) {
 	if err := toml.Unmarshal(bytes, &cfg); err != nil {
 		return cfg, err
 	}
+	if cfg.PlexConfigFile != "" {
+		var plexCfg Config
+		if err := loadSupplementalConfig(path, cfg.PlexConfigFile, "plex_config", &plexCfg); err != nil {
+			return cfg, err
+		}
+		mergePlexConfig(&cfg, &plexCfg)
+	}
 	if cfg.LabelConfigFile != "" {
 		var labelCfg LabelConfig
 		if err := loadSupplementalConfig(path, cfg.LabelConfigFile, "label_config", &labelCfg); err != nil {
@@ -823,7 +831,10 @@ func loadConfig(path string) (Config, error) {
 		cfg.Font.GlowAlpha = 0.35
 	}
 	if cfg.Plex.BaseURL == "" || cfg.Plex.Token == "" {
-		return cfg, errors.New("plex config not found: set plex.base_url and plex.token")
+		if strings.TrimSpace(cfg.PlexConfigFile) == "" {
+			return cfg, errors.New("plex config not found: set plex.base_url and plex.token (or use plex_config)")
+		}
+		return cfg, errors.New("plex config not found: set plex.base_url and plex.token in main config or plex_config file")
 	}
 	if cfg.Plex.Retries <= 0 {
 		cfg.Plex.Retries = 3
@@ -978,6 +989,30 @@ func resolvePathRelativeToConfig(configPath, targetPath string) string {
 		return trimmed
 	}
 	return filepath.Join(filepath.Dir(configPath), trimmed)
+}
+
+func mergePlexConfig(target, supplemental *Config) {
+	if target == nil || supplemental == nil {
+		return
+	}
+	if strings.TrimSpace(supplemental.Plex.BaseURL) != "" {
+		target.Plex.BaseURL = strings.TrimSpace(supplemental.Plex.BaseURL)
+	}
+	if strings.TrimSpace(supplemental.Plex.Token) != "" {
+		target.Plex.Token = strings.TrimSpace(supplemental.Plex.Token)
+	}
+	if supplemental.Plex.Retries > 0 {
+		target.Plex.Retries = supplemental.Plex.Retries
+	}
+	if supplemental.Plex.Workers > 0 {
+		target.Plex.Workers = supplemental.Plex.Workers
+	}
+	if supplemental.Plex.RetryBaseMs > 0 {
+		target.Plex.RetryBaseMs = supplemental.Plex.RetryBaseMs
+	}
+	if supplemental.Plex.RetryMaxMs > 0 {
+		target.Plex.RetryMaxMs = supplemental.Plex.RetryMaxMs
+	}
 }
 
 func loadCollectionNameSet(path string) (map[string]struct{}, error) {
@@ -1196,6 +1231,7 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: plex.workers=%d", cfg.Plex.Workers)
 	logger.Printf("config: plex.retry_base_ms=%d", cfg.Plex.RetryBaseMs)
 	logger.Printf("config: plex.retry_max_ms=%d", cfg.Plex.RetryMaxMs)
+	logger.Printf("config: plex_config=%s", cfg.PlexConfigFile)
 	logger.Printf("config: label_config=%s", cfg.LabelConfigFile)
 	logger.Printf("config: label.lookup_count=%d", len(cfg.Label.Lookups))
 	logger.Printf("config: collection_config=%s", cfg.CollectionConfigFile)
@@ -1381,7 +1417,6 @@ func fetchCollectionItems(client *http.Client, cfg Config, ratingKey string, log
 	items = append(items, out.Videos...)
 	return items, nil
 }
-
 
 func deleteCollection(client *http.Client, cfg Config, sectionKey string, ratingKey string, logger *AppLogger) error {
 	if strings.TrimSpace(sectionKey) == "" {
@@ -3159,7 +3194,7 @@ func plexPathParts(filePath string) []string {
 		}
 		if len(out) == 0 && strings.HasSuffix(part, ":") {
 			continue
-			}
+		}
 		out = append(out, part)
 	}
 	return out

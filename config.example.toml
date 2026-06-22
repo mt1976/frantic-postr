@@ -7,13 +7,12 @@ studio_collections_file = "./studio-collections.txt"
 admin_collections_file = "./admin-collections.txt"
 output_dir = "./output"
 log_file = "./frantic-postr.log"
+plex_config = "./config.plex.toml"
 
 label_config = "./labels.toml"
 collection_config = "./collections.toml"
 
 [plex]
-base_url = "http://127.0.0.1:32400"
-token = "YOUR_PLEX_TOKEN"
 retries = 3
 workers = 1
 retry_base_ms = 1000
