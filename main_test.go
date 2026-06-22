@@ -58,6 +58,26 @@ func TestResolveCollectionTransferPathKeepsExplicitDirectory(t *testing.T) {
 	}
 }
 
+func TestResolveCollectionExportPathAddsDateSuffix(t *testing.T) {
+	cfg := Config{OutputDir: "/tmp/output"}
+	now := time.Date(2026, time.June, 22, 10, 0, 0, 0, time.UTC)
+	got := resolveCollectionExportPath(cfg, "collections-export.json", now)
+	expected := filepath.Join("/tmp/output", "collections-export", "collections-export_20260622.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestResolveCollectionExportPathDoesNotDoubleAppendDate(t *testing.T) {
+	cfg := Config{OutputDir: "/tmp/output"}
+	now := time.Date(2026, time.June, 22, 10, 0, 0, 0, time.UTC)
+	got := resolveCollectionExportPath(cfg, "collections-export_20260622.json", now)
+	expected := filepath.Join("/tmp/output", "collections-export", "collections-export_20260622.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
 func TestSanitizeFileName(t *testing.T) {
 	got := sanitizeFileName(`  A/B:C*D?"E<F>G|  `)
 	if got != "A_B-C_D'EFG_" {
@@ -852,6 +872,53 @@ func TestLoadConfigNormalizesLabelLookups(t *testing.T) {
 	}
 	if len(lookup.Categories) != 2 || lookup.Categories[0] != "urbsex" || lookup.Categories[1] != "abandoned" {
 		t.Fatalf("expected categories fallback from labels, got %+v", lookup.Categories)
+	}
+}
+
+func TestLoadConfigResolvesFontPathRelativeToConfig(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "config")
+	fontsDir := filepath.Join(dir, "fonts")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	if err := os.MkdirAll(fontsDir, 0o755); err != nil {
+		t.Fatalf("failed to create fonts dir: %v", err)
+	}
+
+	templatePath := filepath.Join(dir, "template.png")
+	if err := os.WriteFile(templatePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to write template: %v", err)
+	}
+
+	fontPath := filepath.Join(fontsDir, "Drips.ttf")
+	if err := os.WriteFile(fontPath, []byte("font"), 0o644); err != nil {
+		t.Fatalf("failed to write font: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.toml")
+	configBody := strings.Join([]string{
+		"template_image = \"" + templatePath + "\"",
+		"output_dir = \"" + dir + "\"",
+		"log_file = \"" + filepath.Join(dir, "run.log") + "\"",
+		"",
+		"[font]",
+		"file = \"../fonts/Drips.ttf\"",
+		"",
+		"[plex]",
+		"base_url = \"http://127.0.0.1:32400\"",
+		"token = \"token\"",
+	}, "\n")
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		t.Fatalf("loadConfig failed: %v", err)
+	}
+	if cfg.Font.File != fontPath {
+		t.Fatalf("expected resolved font path %q got %q", fontPath, cfg.Font.File)
 	}
 }
 

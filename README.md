@@ -57,7 +57,8 @@ go run . -config config/config.toml -coll-export
 ```
 
 By default, `-coll-file` values that are just filenames are stored under `output/collections-export/`.
-So the default export location is `output/collections-export/collections-export.json`.
+When running `-coll-export`, the output filename includes the current date in `yyyymmdd` format.
+So the default export location is `output/collections-export/collections-export_yyyymmdd.json`.
 
 1. Import that file into a single selected target library:
 

@@ -566,6 +566,7 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 	resolvedCollFile := resolveCollectionTransferPath(cfg, *collFile)
+	resolvedExportFile := resolveCollectionExportPath(cfg, *collFile, time.Now())
 
 	logger, closeLogger, err := setupLogger(cfg.LogFile)
 	if err != nil {
@@ -587,6 +588,9 @@ func main() {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
 	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, resolvedCollFile)
+	if *collExport {
+		logger.Printf("config: coll_export_file=%s", resolvedExportFile)
+	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	sections, err := fetchSections(client, cfg, logger)
@@ -709,7 +713,7 @@ func main() {
 		return
 	}
 	if *collExport {
-		if err := exportCollections(client, cfg, sections, resolvedCollFile, logger); err != nil {
+		if err := exportCollections(client, cfg, sections, resolvedExportFile, logger); err != nil {
 			logger.Fatalf("collection export failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
@@ -781,6 +785,21 @@ func resolveCollectionTransferPath(cfg Config, collFilePath string) string {
 	return filepath.Join(cfg.OutputDir, collectionTransferDirName, filepath.Base(trimmedPath))
 }
 
+func resolveCollectionExportPath(cfg Config, collFilePath string, now time.Time) string {
+	basePath := resolveCollectionTransferPath(cfg, collFilePath)
+	ext := filepath.Ext(basePath)
+	nameWithoutExt := strings.TrimSuffix(filepath.Base(basePath), ext)
+	if nameWithoutExt == "" {
+		nameWithoutExt = "collections-export"
+	}
+	dateSuffix := now.Format("20060102")
+	if strings.HasSuffix(nameWithoutExt, "_"+dateSuffix) {
+		return basePath
+	}
+	filename := nameWithoutExt + "_" + dateSuffix + ext
+	return filepath.Join(filepath.Dir(basePath), filename)
+}
+
 func loadConfig(path string) (Config, error) {
 	var cfg Config
 	bytes, err := os.ReadFile(path)
@@ -823,6 +842,7 @@ func loadConfig(path string) (Config, error) {
 	cfg.TypeCollectionsFile = resolvePathRelativeToConfig(path, cfg.TypeCollectionsFile)
 	cfg.StudioCollectionsFile = resolvePathRelativeToConfig(path, cfg.StudioCollectionsFile)
 	cfg.AdminCollectionsFile = resolvePathRelativeToConfig(path, cfg.AdminCollectionsFile)
+	cfg.Font.File = resolvePathRelativeToConfig(path, cfg.Font.File)
 	if cfg.LogFile == "" {
 		cfg.LogFile = "frantic-postr.log"
 	}
