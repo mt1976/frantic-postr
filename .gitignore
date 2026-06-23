@@ -33,3 +33,6 @@ config/config.plex.toml
 # .vscode/
 /logs
 /output
+templates/.DS_Store
+.DS_Store
+.DS_Store
