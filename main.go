@@ -66,6 +66,9 @@ type Config struct {
 		TranslateAPIKey             string            `toml:"translate_api_key"`
 		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
 	} `toml:"clean"`
+	Stats struct {
+		ExcludeWords []string `toml:"exclude_words"`
+	} `toml:"stats"`
 	TemplateImage         string              `toml:"template_image"`
 	TypeTemplateImage     string              `toml:"type_template_image"`
 	StudioTemplateImage   string              `toml:"studio_template_image"`
@@ -473,6 +476,11 @@ type pathCleanReportRow struct {
 	TitleAfter  string
 }
 
+type statsWordCount struct {
+	Word  string
+	Count int
+}
+
 func main() {
 	configPath := flag.String("config", "config/config.toml", "Path to config file")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
@@ -484,6 +492,7 @@ func main() {
 	collDupes := flag.Bool("coll-dupes", false, "Report duplicate collection names in a selected library to a CSV file")
 	deleteNonSmart := flag.Bool("coll-delete-non-smart", false, "Delete all non-smart collections from a selected library and write a CSV audit")
 	pathCleanMode := flag.Bool("coll-path-clean", false, "Clean titles in a selected collection by rebuilding them from file paths")
+	statsMode := flag.Bool("stats", false, "Analyze filename word frequency in a selected library and write a CSV report")
 	collExport := flag.Bool("coll-export", false, "Export all collections (including smart filters) from a selected library")
 	collImport := flag.Bool("coll-import", false, "Import collections from -coll-file into a selected library")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
@@ -523,6 +532,9 @@ func main() {
 	if *pathCleanMode {
 		modeCount++
 	}
+	if *statsMode {
+		modeCount++
+	}
 	if *collExport {
 		modeCount++
 	}
@@ -549,12 +561,12 @@ func main() {
 		return
 	}
 	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
+		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -stats, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
 	}
-	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode) {
+	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
 	}
-	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode) && *uploadPosters {
+	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) && *uploadPosters {
 		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
 	labelsToAdd, err := parseLabelList(*labelAdd)
@@ -587,7 +599,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, resolvedCollFile)
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, resolvedCollFile)
 	if *collExport {
 		logger.Printf("config: coll_export_file=%s", resolvedExportFile)
 	}
@@ -694,6 +706,13 @@ func main() {
 	if *pathCleanMode {
 		if err := pathCleanCollectionTitles(client, cfg, sections, logger); err != nil {
 			logger.Fatalf("collection path clean failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *statsMode {
+		if err := analyzeLibraryFileNameStats(client, cfg, sections, logger); err != nil {
+			logger.Fatalf("stats mode failed: %v", err)
 		}
 		logger.Println("shutdown: frantic-postr completed")
 		return
@@ -948,6 +967,7 @@ func loadConfig(path string) (Config, error) {
 	if cfg.Clean.TranslateRateLimitPerMinute <= 0 {
 		cfg.Clean.TranslateRateLimitPerMinute = 10
 	}
+	cfg.Stats.ExcludeWords = normalizeStatsExcludeWords(cfg.Stats.ExcludeWords)
 	if _, err := url.ParseRequestURI(cfg.Plex.BaseURL); err != nil {
 		return cfg, fmt.Errorf("invalid plex.base_url: %w", err)
 	}
@@ -1242,6 +1262,11 @@ func uniquePosterReportPath(outputDir string, now time.Time) string {
 	return filepath.Join(outputDir, fmt.Sprintf("posters-%s.csv", timestamp))
 }
 
+func uniqueStatsReportPath(outputDir string, now time.Time) string {
+	timestamp := now.Format("20060102-150405")
+	return filepath.Join(outputDir, "stats", fmt.Sprintf("word-frequency-%s.csv", timestamp))
+}
+
 func uniqueRunLogPath(path string, now time.Time) string {
 	dir := filepath.Dir(path)
 	ext := filepath.Ext(path)
@@ -1276,6 +1301,7 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: clean.translate_to_english=%t", cfg.Clean.TranslateToEnglish)
 	logger.Printf("config: clean.translate_endpoint=%s", cfg.Clean.TranslateEndpoint)
 	logger.Printf("config: clean.translate_rate_limit_per_minute=%d", cfg.Clean.TranslateRateLimitPerMinute)
+	logger.Printf("config: stats.exclude_words_count=%d", len(cfg.Stats.ExcludeWords))
 	logger.Printf("config: template_image=%s", cfg.TemplateImage)
 	logger.Printf("config: type_template_image=%s", cfg.TypeTemplateImage)
 	logger.Printf("config: studio_template_image=%s", cfg.StudioTemplateImage)
@@ -3792,6 +3818,141 @@ func deleteNonSmartCollections(client *http.Client, cfg Config, sections []plexS
 	return nil
 }
 
+func analyzeLibraryFileNameStats(client *http.Client, cfg Config, sections []plexSection, logger *AppLogger) error {
+	selectedSection, err := selectSingleSection(sections)
+	if err != nil {
+		return err
+	}
+	logger.Printf("stats: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+
+	items, err := fetchSectionItems(client, cfg, selectedSection.Key, logger)
+	if err != nil {
+		return err
+	}
+	logger.Printf("stats: scanned items=%d", len(items))
+
+	excluded := buildStatsExcludedWordSet(cfg.Stats.ExcludeWords)
+	progress := newProgressTracker(logger, "stats", len(items))
+	defer progress.Finish()
+
+	counts := make(map[string]int)
+	skippedWithoutPath := 0
+	for _, item := range items {
+		stem := strings.TrimSpace(libraryItemFileStem(item))
+		if stem == "" {
+			skippedWithoutPath++
+			progress.Advance()
+			continue
+		}
+		for _, word := range tokenizeStatsWords(stem) {
+			if _, blocked := excluded[word]; blocked {
+				continue
+			}
+			counts[word]++
+		}
+		progress.Advance()
+	}
+
+	rows := buildStatsRows(counts)
+	reportPath := uniqueStatsReportPath(cfg.OutputDir, time.Now())
+	if err := writeCSVReport(reportPath, []string{"word", "instances"}, rows); err != nil {
+		return err
+	}
+	logger.Successf("stats complete: file=%s unique_words=%d rows=%d skipped_without_file=%d", reportPath, len(counts), len(rows), skippedWithoutPath)
+	return nil
+}
+
+func normalizeStatsExcludeWords(words []string) []string {
+	if len(words) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(words))
+	out := make([]string, 0, len(words))
+	for _, word := range words {
+		normalized := strings.ToLower(strings.TrimSpace(word))
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func buildStatsExcludedWordSet(extra []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(defaultStatsExcludedWords)+len(extra))
+	for word := range defaultStatsExcludedWords {
+		set[word] = struct{}{}
+	}
+	for _, word := range normalizeStatsExcludeWords(extra) {
+		set[word] = struct{}{}
+	}
+	return set
+}
+
+func tokenizeStatsWords(stem string) []string {
+	lower := strings.ToLower(strings.TrimSpace(stem))
+	if lower == "" {
+		return nil
+	}
+	replacer := strings.NewReplacer("_", " ", ".", " ", "-", " ", "+", " ")
+	cleaned := replacer.Replace(lower)
+	var b strings.Builder
+	for _, r := range cleaned {
+		switch {
+		case unicode.IsLetter(r), unicode.IsNumber(r), unicode.IsSpace(r):
+			b.WriteRune(r)
+		default:
+			b.WriteByte(' ')
+		}
+	}
+	tokens := strings.Fields(b.String())
+	out := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if isNumericToken(token) {
+			continue
+		}
+		out = append(out, token)
+	}
+	return out
+}
+
+func isNumericToken(token string) bool {
+	if strings.TrimSpace(token) == "" {
+		return false
+	}
+	for _, r := range token {
+		if !unicode.IsNumber(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func buildStatsRows(counts map[string]int) [][]string {
+	words := make([]statsWordCount, 0, len(counts))
+	for word, count := range counts {
+		words = append(words, statsWordCount{Word: word, Count: count})
+	}
+	slices.SortFunc(words, func(a, b statsWordCount) int {
+		if a.Count != b.Count {
+			if a.Count > b.Count {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Word, b.Word)
+	})
+	rows := make([][]string, 0, len(words))
+	for _, entry := range words {
+		rows = append(rows, []string{entry.Word, strconv.Itoa(entry.Count)})
+	}
+	return rows
+}
+
 func buildDuplicateCollectionRows(entries []collectionInventoryEntry) ([][]string, int) {
 	dupesByTitle := make(map[string][]collectionInventoryEntry)
 	for _, entry := range entries {
@@ -3871,6 +4032,16 @@ func normalizeCollectionLookupContent(content string) string {
 	trimmed = strings.TrimPrefix(trimmed, "&")
 	trimmed = strings.TrimPrefix(trimmed, "?")
 	return trimmed
+}
+
+var defaultStatsExcludedWords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "been": {}, "being": {},
+	"but": {}, "by": {}, "for": {}, "from": {}, "had": {}, "has": {}, "have": {}, "he": {}, "her": {}, "hers": {},
+	"him": {}, "his": {}, "i": {}, "if": {}, "in": {}, "into": {}, "is": {}, "it": {}, "its": {}, "itself": {},
+	"me": {}, "mine": {}, "my": {}, "of": {}, "on": {}, "or": {}, "our": {}, "ours": {}, "she": {}, "so": {},
+	"than": {}, "that": {}, "the": {}, "their": {}, "theirs": {}, "them": {}, "then": {}, "there": {}, "these": {},
+	"they": {}, "this": {}, "those": {}, "to": {}, "too": {}, "up": {}, "us": {}, "was": {}, "we": {}, "were": {},
+	"what": {}, "when": {}, "where": {}, "which": {}, "who": {}, "why": {}, "with": {}, "you": {}, "your": {}, "yours": {},
 }
 
 func composeCollectionContent(baseURI, content string) string {

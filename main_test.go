@@ -78,6 +78,54 @@ func TestResolveCollectionExportPathDoesNotDoubleAppendDate(t *testing.T) {
 	}
 }
 
+func TestTokenizeStatsWords(t *testing.T) {
+	got := tokenizeStatsWords("The.Big-Brown_Fox+1080p 123")
+	expected := []string{"the", "big", "brown", "fox", "1080p"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected %d tokens got %d: %+v", len(expected), len(got), got)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Fatalf("expected token %d to be %q got %q", i, expected[i], got[i])
+		}
+	}
+}
+
+func TestIsNumericToken(t *testing.T) {
+	if !isNumericToken("123") {
+		t.Fatal("expected numeric token to be true")
+	}
+	if isNumericToken("1080p") {
+		t.Fatal("expected alpha-numeric token to be false")
+	}
+}
+
+func TestBuildStatsExcludedWordSetIncludesDefaultsAndConfigWords(t *testing.T) {
+	set := buildStatsExcludedWordSet([]string{"  custom  ", "THE", "custom"})
+	if _, ok := set["the"]; !ok {
+		t.Fatal("expected default stop word to be included")
+	}
+	if _, ok := set["custom"]; !ok {
+		t.Fatal("expected custom word to be included")
+	}
+}
+
+func TestBuildStatsRowsSortsByCountThenWord(t *testing.T) {
+	rows := buildStatsRows(map[string]int{"beta": 2, "alpha": 3, "zeta": 2})
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows got %d", len(rows))
+	}
+	if rows[0][0] != "alpha" || rows[0][1] != "3" {
+		t.Fatalf("unexpected first row: %+v", rows[0])
+	}
+	if rows[1][0] != "beta" || rows[1][1] != "2" {
+		t.Fatalf("unexpected second row: %+v", rows[1])
+	}
+	if rows[2][0] != "zeta" || rows[2][1] != "2" {
+		t.Fatalf("unexpected third row: %+v", rows[2])
+	}
+}
+
 func TestSanitizeFileName(t *testing.T) {
 	got := sanitizeFileName(`  A/B:C*D?"E<F>G|  `)
 	if got != "A_B-C_D'EFG_" {

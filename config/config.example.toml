@@ -31,6 +31,9 @@ translate_endpoint = "https://libretranslate.com/translate"
 translate_api_key = ""
 translate_rate_limit_per_minute = 10
 
+[stats]
+exclude_words = ["xxx", "sample"]
+
 [font]
 file = ""
 size = 64

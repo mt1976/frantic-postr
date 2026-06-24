@@ -133,6 +133,30 @@ Notes:
 - Existing collections in the target library with the same title are skipped.
 - For smart collections, section references inside filter URIs are rewritten from source library to target library.
 
+## Stats Mode
+
+Stats mode scans filenames in one selected library, counts word usage across the dataset, ranks results by usage, and writes a CSV report.
+
+```bash
+go run . -config config/config.toml -stats
+```
+
+Output:
+
+- CSV file written under `output/stats/`.
+- Columns: `word`, `instances`.
+- Sorted by highest `instances` first, then alphabetically when counts are equal.
+
+Filtering:
+
+- Common stop words are excluded by default (for example: `the`, `and`, `it`, `he`, `she`).
+- Add your own excluded words in config:
+
+```toml
+[stats]
+exclude_words = ["xxx", "sample"]
+```
+
 ## Library Clone
 
 Clone mode creates a new Plex library from a selected source library by copying:
