@@ -260,8 +260,10 @@ type selectionMemory struct {
 	SectionKeys []string `json:"section_keys"`
 }
 
-const selectionMemoryFile = ".frantic-postr-selection.json"
-const collectionTransferDirName = "collections-export"
+const (
+	selectionMemoryFile       = ".frantic-postr-selection.json"
+	collectionTransferDirName = "collections-export"
+)
 
 var (
 	colorOutputEnabled     = true
@@ -4139,27 +4141,93 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 	}
 	logger.Printf("output dir ready: %s", outDir)
 	collections = disambiguateCollectionsByGUID(collections)
-	reportRows := make([][]string, 0, len(collections))
+	workerCount := cfg.Plex.Workers
+	if workerCount <= 0 {
+		workerCount = 1
+	}
+	logger.Infof("poster mode: collections=%d workers=%d upload=%t", len(collections), workerCount, upload)
+
 	progress := newProgressTracker(logger, "gen posters", len(collections))
 	defer progress.Finish()
-	for _, collection := range collections {
-		templatePath, backgroundName := selectPosterTemplate(cfg, collection.Title)
-		posterCfg := cfg
-		posterCfg.TemplateImage = templatePath
-		outputPath := buildOutputPath(outDir, collection.Title, templatePath)
-		logger.Printf("creating poster: collection=%q guid=%q background=%s output=%s", collection.Title, collection.GUID, backgroundName, outputPath)
-		if err := renderCollectionPoster(posterCfg, collection.Title, outputPath); err != nil {
-			return fmt.Errorf("render %q: %w", collection.Title, err)
-		}
-		reportRows = append(reportRows, []string{collection.Title, collection.GUID, collection.RatingKey, backgroundName, outputPath})
-		logger.Successf("poster created: %s", outputPath)
-		if upload {
-			if err := uploadCollectionPoster(client, cfg, collection, outputPath, logger); err != nil {
-				return fmt.Errorf("upload poster for %q: %w", collection.Title, err)
-			}
-		}
-		progress.Advance()
+
+	type posterJob struct {
+		index      int
+		collection plexCollection
 	}
+	type posterResult struct {
+		index int
+		row   []string
+		err   error
+	}
+
+	jobs := make(chan posterJob)
+	results := make(chan posterResult, len(collections))
+
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				collection := job.collection
+				func() {
+					defer progress.Advance()
+
+					templatePath, backgroundName := selectPosterTemplate(cfg, collection.Title)
+					posterCfg := cfg
+					posterCfg.TemplateImage = templatePath
+					outputPath := buildOutputPath(outDir, collection.Title, templatePath)
+					logger.Printf("creating poster: collection=%q guid=%q background=%s output=%s", collection.Title, collection.GUID, backgroundName, outputPath)
+					if err := renderCollectionPoster(posterCfg, collection.Title, outputPath); err != nil {
+						results <- posterResult{index: job.index, err: fmt.Errorf("render %q: %w", collection.Title, err)}
+						return
+					}
+					logger.Successf("poster created: %s", outputPath)
+
+					if upload {
+						if err := uploadCollectionPoster(client, cfg, collection, outputPath, logger); err != nil {
+							results <- posterResult{index: job.index, err: fmt.Errorf("upload poster for %q: %w", collection.Title, err)}
+							return
+						}
+					}
+
+					results <- posterResult{
+						index: job.index,
+						row:   []string{collection.Title, collection.GUID, collection.RatingKey, backgroundName, outputPath},
+					}
+				}()
+			}
+		}()
+	}
+
+	for index, collection := range collections {
+		jobs <- posterJob{index: index, collection: collection}
+	}
+	close(jobs)
+	wg.Wait()
+	close(results)
+
+	reportRowsByIndex := make([][]string, len(collections))
+	errs := make([]string, 0)
+	for result := range results {
+		if result.err != nil {
+			errs = append(errs, result.err.Error())
+			continue
+		}
+		reportRowsByIndex[result.index] = result.row
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("poster generation failed: %s", strings.Join(errs, "; "))
+	}
+
+	reportRows := make([][]string, 0, len(collections))
+	for _, row := range reportRowsByIndex {
+		if len(row) == 0 {
+			continue
+		}
+		reportRows = append(reportRows, row)
+	}
+
 	reportPath := uniquePosterReportPath(outDir, time.Now())
 	if err := writeCSVReport(reportPath, []string{"collection", "guid", "rating_key", "background", "output_file"}, reportRows); err != nil {
 		logger.Warningf("poster report: failed to write: %v", err)

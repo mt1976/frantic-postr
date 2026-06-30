@@ -13,7 +13,7 @@ collection_config = "./collections.toml"
 
 [plex]
 retries = 6
-workers = 5
+workers = 10
 retry_base_ms = 500
 retry_max_ms = 50000
 
