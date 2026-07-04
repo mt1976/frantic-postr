@@ -46,6 +46,76 @@ Interactive prompt layout:
   - an input row,
   - a feedback row (validation errors, prompt guidance, etc).
 
+## Backup / Restore / Rollback
+
+Create a compressed backup of runtime assets and config into `backups/` at the repository root:
+
+```bash
+go run . -config config/config.toml -backup
+```
+
+Backup contents include:
+
+- `config/` (all files)
+- `templates/` (all files)
+- `fonts/` (all files)
+- `.frantic-postr-selection.json` (if present)
+
+Backup archives are named like:
+
+- `frantic-postr-backup-yyyymmdd-hhmmss.zip`
+
+Backup retention is configured in `config/config.toml`:
+
+```toml
+[backup]
+retention_days = 30
+```
+
+When `retention_days > 0`, backups older than that age are automatically removed during `-backup`.
+
+Restore from the newest backup:
+
+```bash
+go run . -config config/config.toml -restore
+```
+
+Restore a specific backup by exact or partial filename:
+
+```bash
+go run . -config config/config.toml -restore -restore-file 20260704-1030
+```
+
+Dry-run a restore using the existing `-trail`/`-trial` mode:
+
+```bash
+go run . -config config/config.toml -restore -trial
+```
+
+In dry-run mode, files are not changed. Proposed updates are logged to screen and file as:
+
+- `property : original -> new`
+
+If multiple backups match `-restore-file`, interactive mode lets you choose one and confirm.
+
+Restore merge behavior:
+
+- For `config/*.toml`: backup values overwrite current values for matching keys.
+- New keys found in backup TOML are added.
+- Existing keys not present in backup are preserved.
+- Non-TOML managed files are replaced from backup.
+
+Every restore writes a detailed change log CSV under `output/restore/`.
+
+Rollback the most recent restore run:
+
+```bash
+go run . -config config/config.toml -rollback
+```
+
+Rollback reverts changed files to their pre-restore content and removes files that were added by the restore.
+Rollback actions are logged under `output/restore/`.
+
 ## Collection Export / Import / Inject
 
 You can now export collections from one library and import them into another library, including smart collection filter definitions.

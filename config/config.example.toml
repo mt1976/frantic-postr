@@ -34,6 +34,9 @@ translate_rate_limit_per_minute = 10
 [stats]
 exclude_words = ["xxx", "sample"]
 
+[backup]
+retention_days = 30
+
 [font]
 file = ""
 size = 64

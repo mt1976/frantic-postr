@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"context"
@@ -25,8 +26,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +72,9 @@ type Config struct {
 	Stats struct {
 		ExcludeWords []string `toml:"exclude_words"`
 	} `toml:"stats"`
+	Backup struct {
+		RetentionDays int `toml:"retention_days"`
+	} `toml:"backup"`
 	TemplateImage         string              `toml:"template_image"`
 	TypeTemplateImage     string              `toml:"type_template_image"`
 	StudioTemplateImage   string              `toml:"studio_template_image"`
@@ -260,9 +266,42 @@ type selectionMemory struct {
 	SectionKeys []string `json:"section_keys"`
 }
 
+type backupCandidate struct {
+	Name    string
+	Path    string
+	ModTime time.Time
+}
+
+type restoreLogRow struct {
+	Path   string
+	Action string
+	Detail string
+}
+
+type rollbackManifestEntry struct {
+	Path         string `json:"path"`
+	ExistedPrior bool   `json:"existed_prior"`
+}
+
+type rollbackManifest struct {
+	RestoreTimestamp string                  `json:"restore_timestamp"`
+	Entries          []rollbackManifestEntry `json:"entries"`
+}
+
+type lastRestoreState struct {
+	RestoreTimestamp string `json:"restore_timestamp"`
+	BackupArchive    string `json:"backup_archive"`
+	RollbackZip      string `json:"rollback_zip"`
+	ManifestFile     string `json:"manifest_file"`
+	RolledBack       bool   `json:"rolled_back"`
+}
+
 const (
 	selectionMemoryFile       = ".frantic-postr-selection.json"
 	collectionTransferDirName = "collections-export"
+	backupDirName             = "backups"
+	restoreLogDirName         = "restore"
+	lastRestoreStateFileName  = "last-restore-state.json"
 )
 
 var (
@@ -497,6 +536,10 @@ func main() {
 	statsMode := flag.Bool("stats", false, "Analyze filename word frequency in a selected library and write a CSV report")
 	collExport := flag.Bool("coll-export", false, "Export all collections (including smart filters) from a selected library")
 	collImport := flag.Bool("coll-import", false, "Import collections from -coll-file into a selected library")
+	backupMode := flag.Bool("backup", false, "Create a compressed backup of config, templates, fonts, and selection state")
+	restoreMode := flag.Bool("restore", false, "Restore config/templates/fonts from the newest (or selected) backup")
+	rollbackMode := flag.Bool("rollback", false, "Rollback file changes made by the last -restore run")
+	restoreFile := flag.String("restore-file", "", "Backup filename (or part of it) to restore when using -restore")
 	cloneLibraryMode := flag.Bool("clone", false, "Clone a selected library (settings + path mappings) with a new name")
 	labelMode := flag.Bool("label", false, "Scan a selected library and add labels to items with titles matching -find")
 	collInject := flag.Bool("coll-inject", false, "Inject smart collections from config/collections.toml into a selected library")
@@ -543,6 +586,15 @@ func main() {
 	if importMode {
 		modeCount++
 	}
+	if *backupMode {
+		modeCount++
+	}
+	if *restoreMode {
+		modeCount++
+	}
+	if *rollbackMode {
+		modeCount++
+	}
 	if *cloneLibraryMode {
 		modeCount++
 	}
@@ -563,26 +615,26 @@ func main() {
 		return
 	}
 	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -stats, -coll-export, -coll-import, -clone, -label, -coll-inject, -clean, -translate")
+		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -stats, -coll-export, -coll-import, -backup, -restore, -rollback, -clone, -label, -coll-inject, -clean, -translate")
 	}
-	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) {
+	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *backupMode || *restoreMode || *rollbackMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
 	}
-	if (*cloneLibraryMode || *collExport || importMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) && *uploadPosters {
+	if (*cloneLibraryMode || *collExport || importMode || *backupMode || *restoreMode || *rollbackMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) && *uploadPosters {
 		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
 	labelsToAdd, err := parseLabelList(*labelAdd)
 	if err != nil {
 		log.Fatalf("invalid -add labels: %v", err)
 	}
-	cfg, err := loadConfig(*configPath)
+	opsCfg, err := loadOpsConfig(*configPath)
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	resolvedCollFile := resolveCollectionTransferPath(cfg, *collFile)
-	resolvedExportFile := resolveCollectionExportPath(cfg, *collFile, time.Now())
+	resolvedCollFile := resolveCollectionTransferPath(opsCfg, *collFile)
+	resolvedExportFile := resolveCollectionExportPath(opsCfg, *collFile, time.Now())
 
-	logger, closeLogger, err := setupLogger(cfg.LogFile)
+	logger, closeLogger, err := setupLogger(opsCfg.LogFile)
 	if err != nil {
 		log.Fatalf("failed to setup logger: %v", err)
 	}
@@ -590,6 +642,33 @@ func main() {
 	defer closeLogger()
 
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	if *backupMode {
+		if err := createBackupArchive(opsCfg, *configPath, logger); err != nil {
+			logger.Fatalf("backup failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *restoreMode {
+		if err := restoreFromBackup(opsCfg, strings.TrimSpace(*restoreFile), logger); err != nil {
+			logger.Fatalf("restore failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+	if *rollbackMode {
+		if err := rollbackLastRestore(opsCfg, logger); err != nil {
+			logger.Fatalf("rollback failed: %v", err)
+		}
+		logger.Println("shutdown: frantic-postr completed")
+		return
+	}
+
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		logger.Fatalf("failed to load config: %v", err)
+	}
 	logConfig(logger, cfg)
 	effectiveUpdateCategoryMode := *updateCategoryMode
 	effectiveOnlyCategoryMode := *onlyCategoryMode
@@ -601,7 +680,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t coll_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, resolvedCollFile)
+	logger.Printf("config: update_category=%t only_category=%t", effectiveUpdateCategoryMode, effectiveOnlyCategoryMode)
 	if *collExport {
 		logger.Printf("config: coll_export_file=%s", resolvedExportFile)
 	}
@@ -905,6 +984,9 @@ func loadConfig(path string) (Config, error) {
 	if cfg.Plex.RetryMaxMs <= 0 {
 		cfg.Plex.RetryMaxMs = 30000
 	}
+	if cfg.Backup.RetentionDays < 0 {
+		return cfg, errors.New("backup.retention_days must be >= 0")
+	}
 	for i := range cfg.Label.Lookups {
 		lookup := &cfg.Label.Lookups[i]
 		lookup.TitleContains = strings.TrimSpace(lookup.TitleContains)
@@ -1037,6 +1119,40 @@ func loadConfig(path string) (Config, error) {
 		if err := requireDirExists("log_file directory", logDir); err != nil {
 			return cfg, err
 		}
+	}
+	return cfg, nil
+}
+
+func loadOpsConfig(path string) (Config, error) {
+	var cfg Config
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, err
+	}
+	if err := toml.Unmarshal(bytes, &cfg); err != nil {
+		return cfg, err
+	}
+	if cfg.OutputDir == "" {
+		cfg.OutputDir = "output"
+	}
+	if cfg.LogFile == "" {
+		cfg.LogFile = "frantic-postr.log"
+	}
+	cfg.TemplateImage = resolvePathRelativeToConfig(path, cfg.TemplateImage)
+	cfg.TypeTemplateImage = resolvePathRelativeToConfig(path, cfg.TypeTemplateImage)
+	cfg.StudioTemplateImage = resolvePathRelativeToConfig(path, cfg.StudioTemplateImage)
+	cfg.AdminTemplateImage = resolvePathRelativeToConfig(path, cfg.AdminTemplateImage)
+	cfg.TypeCollectionsFile = resolvePathRelativeToConfig(path, cfg.TypeCollectionsFile)
+	cfg.StudioCollectionsFile = resolvePathRelativeToConfig(path, cfg.StudioCollectionsFile)
+	cfg.AdminCollectionsFile = resolvePathRelativeToConfig(path, cfg.AdminCollectionsFile)
+	cfg.Font.File = resolvePathRelativeToConfig(path, cfg.Font.File)
+	cfg.PlexConfigFile = resolvePathRelativeToConfig(path, cfg.PlexConfigFile)
+	cfg.LabelConfigFile = resolvePathRelativeToConfig(path, cfg.LabelConfigFile)
+	cfg.CollectionConfigFile = resolvePathRelativeToConfig(path, cfg.CollectionConfigFile)
+	cfg.LogFile = resolvePathRelativeToConfig(path, cfg.LogFile)
+	cfg.OutputDir = resolvePathRelativeToConfig(path, cfg.OutputDir)
+	if cfg.Backup.RetentionDays < 0 {
+		return cfg, errors.New("backup.retention_days must be >= 0")
 	}
 	return cfg, nil
 }
@@ -1287,6 +1403,850 @@ func uniqueRunLogPath(path string, now time.Time) string {
 	return filepath.Join(dir, fileName)
 }
 
+func backupArchiveDir(workspaceRoot string) string {
+	return filepath.Join(workspaceRoot, backupDirName)
+}
+
+func createBackupArchive(cfg Config, configPath string, logger *AppLogger) error {
+	workspaceRoot, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	backupDir := backupArchiveDir(workspaceRoot)
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		return fmt.Errorf("create backup dir: %w", err)
+	}
+
+	archiveName := fmt.Sprintf("%s-backup-%s.zip", appDisplayName, time.Now().Format("20060102-150405"))
+	archivePath := filepath.Join(backupDir, archiveName)
+
+	archiveFile, err := os.Create(archivePath)
+	if err != nil {
+		return fmt.Errorf("create backup archive: %w", err)
+	}
+	defer archiveFile.Close()
+
+	zipWriter := zip.NewWriter(archiveFile)
+	defer zipWriter.Close()
+
+	sources := collectBackupSources(cfg, configPath, workspaceRoot)
+	added := 0
+	seen := map[string]struct{}{}
+	for _, src := range sources {
+		if src == "" {
+			continue
+		}
+		if err := addPathToZip(zipWriter, workspaceRoot, src, seen, logger, &added); err != nil {
+			return err
+		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		return fmt.Errorf("finalize backup archive: %w", err)
+	}
+	if err := applyBackupRetention(cfg, backupDir, logger); err != nil {
+		return err
+	}
+	logger.Successf("backup complete: archive=%s files=%d", archivePath, added)
+	return nil
+}
+
+func applyBackupRetention(cfg Config, backupDir string, logger *AppLogger) error {
+	if cfg.Backup.RetentionDays <= 0 {
+		return nil
+	}
+	backups, err := listBackupArchives(backupDir)
+	if err != nil {
+		return err
+	}
+	cutoff := time.Now().AddDate(0, 0, -cfg.Backup.RetentionDays)
+	removed := 0
+	for _, candidate := range backups {
+		if candidate.ModTime.After(cutoff) {
+			continue
+		}
+		if err := os.Remove(candidate.Path); err != nil {
+			return fmt.Errorf("backup retention remove %s: %w", candidate.Path, err)
+		}
+		removed++
+		if logger != nil {
+			logger.Infof("backup retention: removed=%s age_days=%d", candidate.Name, int(time.Since(candidate.ModTime).Hours()/24))
+		}
+	}
+	if logger != nil {
+		logger.Infof("backup retention: days=%d removed=%d", cfg.Backup.RetentionDays, removed)
+	}
+	return nil
+}
+
+func collectBackupSources(cfg Config, configPath, workspaceRoot string) []string {
+	sources := []string{}
+	resolvedConfigPath := strings.TrimSpace(configPath)
+	if resolvedConfigPath != "" {
+		if !filepath.IsAbs(resolvedConfigPath) {
+			resolvedConfigPath = filepath.Join(workspaceRoot, resolvedConfigPath)
+		}
+		sources = append(sources, filepath.Dir(filepath.Clean(resolvedConfigPath)))
+	}
+
+	templatesDir := firstExistingDir(cfg.TemplateImage, cfg.TypeTemplateImage, cfg.StudioTemplateImage, cfg.AdminTemplateImage)
+	if templatesDir != "" {
+		sources = append(sources, templatesDir)
+	}
+
+	fontsDir := firstExistingDir(cfg.Font.File)
+	if fontsDir == "" {
+		fallback := filepath.Join(workspaceRoot, "fonts")
+		if info, err := os.Stat(fallback); err == nil && info.IsDir() {
+			fontsDir = fallback
+		}
+	}
+	if fontsDir != "" {
+		sources = append(sources, fontsDir)
+	}
+
+	selectionPath := filepath.Join(workspaceRoot, selectionMemoryFile)
+	if info, err := os.Stat(selectionPath); err == nil && !info.IsDir() {
+		sources = append(sources, selectionPath)
+	}
+
+	return sources
+}
+
+func firstExistingDir(paths ...string) string {
+	for _, p := range paths {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+		info, err := os.Stat(trimmed)
+		if err != nil {
+			continue
+		}
+		if info.IsDir() {
+			return filepath.Clean(trimmed)
+		}
+		return filepath.Dir(filepath.Clean(trimmed))
+	}
+	return ""
+}
+
+func addPathToZip(zipWriter *zip.Writer, workspaceRoot, source string, seen map[string]struct{}, logger *AppLogger, added *int) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if logger != nil {
+				logger.Warningf("backup: skipped missing source=%s", source)
+			}
+			return nil
+		}
+		return fmt.Errorf("backup stat %s: %w", source, err)
+	}
+	if info.IsDir() {
+		return filepath.WalkDir(source, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() {
+				return nil
+			}
+			return addFileToZip(zipWriter, workspaceRoot, path, seen, added, logger)
+		})
+	}
+	return addFileToZip(zipWriter, workspaceRoot, source, seen, added, logger)
+}
+
+func addFileToZip(zipWriter *zip.Writer, workspaceRoot, filePath string, seen map[string]struct{}, added *int, logger *AppLogger) error {
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return err
+	}
+	relPath := toArchiveRelPath(workspaceRoot, absPath)
+	if _, ok := seen[relPath]; ok {
+		return nil
+	}
+	seen[relPath] = struct{}{}
+
+	bytes, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("backup read %s: %w", absPath, err)
+	}
+	w, err := zipWriter.Create(relPath)
+	if err != nil {
+		return fmt.Errorf("backup create zip entry %s: %w", relPath, err)
+	}
+	if _, err := w.Write(bytes); err != nil {
+		return fmt.Errorf("backup write zip entry %s: %w", relPath, err)
+	}
+	*added++
+	if logger != nil {
+		logger.Infof("backup: added %s", relPath)
+	}
+	return nil
+}
+
+func toArchiveRelPath(workspaceRoot, absPath string) string {
+	rel, err := filepath.Rel(workspaceRoot, absPath)
+	if err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(filepath.Clean(rel))
+	}
+	return filepath.ToSlash(filepath.Base(absPath))
+}
+
+func restoreAuditDir(cfg Config) string {
+	return filepath.Join(cfg.OutputDir, restoreLogDirName)
+}
+
+func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) error {
+	workspaceRoot, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	backupsDir := backupArchiveDir(workspaceRoot)
+	selectedBackup, err := selectBackupArchive(backupsDir, restoreFilter)
+	if err != nil {
+		return err
+	}
+	dryRun := trailModeEnabled
+
+	if isInteractiveTerminal() {
+		prompt := fmt.Sprintf("Restore backup %q", filepath.Base(selectedBackup.Path))
+		if dryRun {
+			prompt = fmt.Sprintf("Dry-run restore backup %q (-trail active)", filepath.Base(selectedBackup.Path))
+		}
+		proceed, err := promptYesNo(prompt)
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			logger.Println("restore: canceled")
+			return nil
+		}
+	}
+
+	restoreLogDir := restoreAuditDir(cfg)
+	if err := os.MkdirAll(restoreLogDir, 0o755); err != nil {
+		return fmt.Errorf("create restore log dir: %w", err)
+	}
+	timestamp := time.Now().Format("20060102-150405")
+	reportName := fmt.Sprintf("restore-%s.csv", timestamp)
+	if dryRun {
+		reportName = fmt.Sprintf("restore-dry-run-%s.csv", timestamp)
+	}
+	reportPath := filepath.Join(restoreLogDir, reportName)
+
+	var (
+		restoreZipPath string
+		manifestPath  string
+		rollbackZip   *zip.Writer
+		manifest      *rollbackManifest
+		seenManifest  map[string]struct{}
+	)
+	if !dryRun {
+		restoreZipPath = filepath.Join(restoreLogDir, fmt.Sprintf("rollback-pre-restore-%s.zip", timestamp))
+		manifestPath = filepath.Join(restoreLogDir, fmt.Sprintf("restore-manifest-%s.json", timestamp))
+		rollbackZipFile, err := os.Create(restoreZipPath)
+		if err != nil {
+			return fmt.Errorf("create rollback zip: %w", err)
+		}
+		defer rollbackZipFile.Close()
+		rollbackZip = zip.NewWriter(rollbackZipFile)
+		m := rollbackManifest{RestoreTimestamp: timestamp, Entries: []rollbackManifestEntry{}}
+		manifest = &m
+		seenManifest = map[string]struct{}{}
+	}
+	rows := []restoreLogRow{}
+
+	backupReader, err := zip.OpenReader(selectedBackup.Path)
+	if err != nil {
+		if rollbackZip != nil {
+			_ = rollbackZip.Close()
+		}
+		return fmt.Errorf("open backup archive: %w", err)
+	}
+	defer backupReader.Close()
+
+	changeCount := 0
+	for _, file := range backupReader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		relPath, ok := normalizeArchivePath(file.Name)
+		if !ok || !isManagedRestorePath(relPath) {
+			continue
+		}
+
+		contents, err := readZipFile(file)
+		if err != nil {
+			if rollbackZip != nil {
+				_ = rollbackZip.Close()
+			}
+			return err
+		}
+		destPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
+		action, detail, changed, changes, applyErr := applyRestoredFile(destPath, relPath, contents, rollbackZip, manifest, seenManifest, dryRun)
+		if applyErr != nil {
+			if rollbackZip != nil {
+				_ = rollbackZip.Close()
+			}
+			return applyErr
+		}
+		rowDetail := detail
+		if len(changes) > 0 {
+			rowDetail = detail + " | " + strings.Join(changes, " | ")
+		}
+		rows = append(rows, restoreLogRow{Path: relPath, Action: action, Detail: rowDetail})
+		if logger != nil {
+			logger.Infof("restore: %s %s (%s)", action, relPath, detail)
+			for _, change := range changes {
+				if dryRun {
+					logger.Successf("restore proposed: %s", change)
+					continue
+				}
+				logger.Successf("restore change: %s", change)
+			}
+		}
+		if changed {
+			changeCount++
+		}
+	}
+
+	if rollbackZip != nil {
+		if err := rollbackZip.Close(); err != nil {
+			return fmt.Errorf("finalize rollback zip: %w", err)
+		}
+	}
+
+	if err := writeCSVReport(reportPath, []string{"path", "action", "detail"}, restoreRowsToCSV(rows)); err != nil {
+		return fmt.Errorf("write restore report: %w", err)
+	}
+	if logger != nil {
+		logger.Infof("restore: report written=%s rows=%d", reportPath, len(rows))
+	}
+
+	if dryRun {
+		if logger != nil {
+			logger.Successf("restore dry-run complete: backup=%s proposed_changes=%d", selectedBackup.Path, changeCount)
+		}
+		return nil
+	}
+
+	if changeCount == 0 {
+		_ = os.Remove(restoreZipPath)
+		if logger != nil {
+			logger.Successf("restore complete: no file changes applied")
+		}
+		return nil
+	}
+
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		return err
+	}
+
+	state := lastRestoreState{
+		RestoreTimestamp: timestamp,
+		BackupArchive:    selectedBackup.Path,
+		RollbackZip:      restoreZipPath,
+		ManifestFile:     manifestPath,
+		RolledBack:       false,
+	}
+	stateBytes, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	statePath := filepath.Join(restoreLogDir, lastRestoreStateFileName)
+	if err := os.WriteFile(statePath, stateBytes, 0o644); err != nil {
+		return err
+	}
+	if logger != nil {
+		logger.Successf("restore complete: backup=%s changes=%d rollback_state=%s", selectedBackup.Path, changeCount, statePath)
+	}
+	return nil
+}
+
+func restoreRowsToCSV(rows []restoreLogRow) [][]string {
+	out := make([][]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, []string{row.Path, row.Action, row.Detail})
+	}
+	return out
+}
+
+func selectBackupArchive(backupsDir, filter string) (backupCandidate, error) {
+	backups, err := listBackupArchives(backupsDir)
+	if err != nil {
+		return backupCandidate{}, err
+	}
+	if len(backups) == 0 {
+		return backupCandidate{}, fmt.Errorf("no backup archives found in %s", backupsDir)
+	}
+	if strings.TrimSpace(filter) == "" {
+		return backups[0], nil
+	}
+
+	needle := strings.ToLower(strings.TrimSpace(filter))
+	matches := make([]backupCandidate, 0, len(backups))
+	for _, candidate := range backups {
+		nameLower := strings.ToLower(candidate.Name)
+		if nameLower == needle || strings.Contains(nameLower, needle) {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) == 0 {
+		return backupCandidate{}, fmt.Errorf("no backup matched %q in %s", filter, backupsDir)
+	}
+	if len(matches) == 1 || !isInteractiveTerminal() {
+		if len(matches) > 1 && !isInteractiveTerminal() {
+			return backupCandidate{}, fmt.Errorf("multiple backups matched %q; run in interactive mode or provide a more specific name", filter)
+		}
+		return matches[0], nil
+	}
+	return promptBackupChoice(matches)
+}
+
+func promptBackupChoice(candidates []backupCandidate) (backupCandidate, error) {
+	feedback := ""
+	page := 0
+	dataHeight := classicDataAreaHeight()
+	headerLines := []string{"Multiple backups matched. Select one to restore:", ""}
+	itemRows := dataHeight - len(headerLines)
+	if itemRows < 1 {
+		itemRows = 1
+	}
+	for {
+		start, end, totalPages := pageSlice(len(candidates), page, itemRows)
+		page = start / itemRows
+		content := make([]string, 0, len(headerLines)+(end-start)+2)
+		content = append(content, headerLines...)
+		for idx := start; idx < end; idx++ {
+			candidate := candidates[idx]
+			content = append(content, fmt.Sprintf("[%d] %s (%s)", idx+1, candidate.Name, candidate.ModTime.Format("2006-01-02 15:04:05")))
+		}
+		if totalPages > 1 {
+			content = append(content, "")
+			content = append(content, fmt.Sprintf("Page %d/%d - F or N next, B back", page+1, totalPages))
+		}
+		prompt := fmt.Sprintf("Input: backup number [%d-%d]", start+1, end)
+		if totalPages > 1 {
+			prompt += " | F/N/B"
+		}
+		input, err := promptWithClassicLayout(content, prompt, feedback)
+		if err != nil {
+			return backupCandidate{}, err
+		}
+		if move := parsePageCommand(input); move != 0 && totalPages > 1 {
+			nextPage := page + move
+			if nextPage < 0 || nextPage >= totalPages {
+				feedback = "Already at boundary page."
+				continue
+			}
+			page = nextPage
+			feedback = ""
+			continue
+		}
+		choice, err := strconv.Atoi(strings.TrimSpace(input))
+		if err != nil || choice < 1 || choice > len(candidates) {
+			feedback = "Please enter a valid backup number."
+			continue
+		}
+		return candidates[choice-1], nil
+	}
+}
+
+func listBackupArchives(backupsDir string) ([]backupCandidate, error) {
+	entries, err := os.ReadDir(backupsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	backups := make([]backupCandidate, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(strings.ToLower(name), ".zip") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		backups = append(backups, backupCandidate{
+			Name:    name,
+			Path:    filepath.Join(backupsDir, name),
+			ModTime: info.ModTime(),
+		})
+	}
+	sort.Slice(backups, func(i, j int) bool {
+		if backups[i].ModTime.Equal(backups[j].ModTime) {
+			return backups[i].Name > backups[j].Name
+		}
+		return backups[i].ModTime.After(backups[j].ModTime)
+	})
+	return backups, nil
+}
+
+func normalizeArchivePath(in string) (string, bool) {
+	trimmed := strings.TrimSpace(in)
+	if trimmed == "" {
+		return "", false
+	}
+	for _, part := range strings.Split(strings.ReplaceAll(trimmed, "\\", "/"), "/") {
+		if strings.TrimSpace(part) == ".." {
+			return "", false
+		}
+	}
+	cleaned := pathCleanSlash(trimmed)
+	if strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "../") || cleaned == ".." {
+		return "", false
+	}
+	return cleaned, true
+}
+
+func pathCleanSlash(in string) string {
+	parts := strings.Split(strings.ReplaceAll(in, "\\", "/"), "/")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, part)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return strings.Join(out, "/")
+}
+
+func isManagedRestorePath(relPath string) bool {
+	if relPath == selectionMemoryFile {
+		return true
+	}
+	if strings.HasPrefix(relPath, "config/") {
+		return true
+	}
+	if strings.HasPrefix(relPath, "templates/") {
+		return true
+	}
+	if strings.HasPrefix(relPath, "fonts/") {
+		return true
+	}
+	return false
+}
+
+func readZipFile(file *zip.File) ([]byte, error) {
+	r, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	bytes, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+func applyRestoredFile(destPath, relPath string, backupContents []byte, rollbackZip *zip.Writer, manifest *rollbackManifest, seenManifest map[string]struct{}, dryRun bool) (string, string, bool, []string, error) {
+	currentContents, readErr := os.ReadFile(destPath)
+	exists := readErr == nil
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return "", "", false, nil, readErr
+	}
+
+	targetContents := backupContents
+	changes := []string{}
+	action := "updated"
+	detail := "overwritten from backup"
+	if strings.HasPrefix(relPath, "config/") && strings.EqualFold(filepath.Ext(relPath), ".toml") && exists {
+		merged, mergeChanges, err := mergeTOMLDocumentsWithChanges(currentContents, backupContents)
+		if err != nil {
+			return "", "", false, nil, fmt.Errorf("merge toml %s: %w", relPath, err)
+		}
+		targetContents = merged
+		changes = mergeChanges
+		action = "merged"
+		detail = "merged backup values into current file"
+	}
+
+	if action == "merged" && len(changes) == 0 {
+		return "unchanged", "merge produced no property changes", false, nil, nil
+	}
+
+	if exists && bytes.Equal(currentContents, targetContents) {
+		if action == "merged" {
+			return "unchanged", "merge produced no changes", false, nil, nil
+		}
+		return "unchanged", "file already matched backup", false, nil, nil
+	}
+	if !exists {
+		action = "added"
+		detail = "new file from backup"
+		changes = []string{"file_presence : <missing> -> present"}
+	} else if action != "merged" {
+		changes = []string{fmt.Sprintf("file_size_bytes : %d -> %d", len(currentContents), len(targetContents))}
+	}
+
+	if manifest != nil && seenManifest != nil {
+		if _, ok := seenManifest[relPath]; !ok {
+			seenManifest[relPath] = struct{}{}
+			manifest.Entries = append(manifest.Entries, rollbackManifestEntry{Path: relPath, ExistedPrior: exists})
+		}
+	}
+	if rollbackZip != nil && exists {
+		w, err := rollbackZip.Create(relPath)
+		if err != nil {
+			return "", "", false, nil, err
+		}
+		if _, err := w.Write(currentContents); err != nil {
+			return "", "", false, nil, err
+		}
+	}
+	if dryRun {
+		return action, detail, true, changes, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return "", "", false, nil, err
+	}
+	if err := os.WriteFile(destPath, targetContents, 0o644); err != nil {
+		return "", "", false, nil, err
+	}
+	return action, detail, true, changes, nil
+}
+
+func mergeTOMLDocuments(currentBytes, backupBytes []byte) ([]byte, error) {
+	merged, _, err := mergeTOMLDocumentsWithChanges(currentBytes, backupBytes)
+	return merged, err
+}
+
+func mergeTOMLDocumentsWithChanges(currentBytes, backupBytes []byte) ([]byte, []string, error) {
+	before := map[string]any{}
+	if err := toml.Unmarshal(currentBytes, &before); err != nil {
+		return nil, nil, err
+	}
+	current := map[string]any{}
+	if err := toml.Unmarshal(currentBytes, &current); err != nil {
+		return nil, nil, err
+	}
+	incoming := map[string]any{}
+	if err := toml.Unmarshal(backupBytes, &incoming); err != nil {
+		return nil, nil, err
+	}
+	mergeMapRecursive(current, incoming)
+	changes := diffMapValues(before, current)
+	out, err := toml.Marshal(current)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, changes, nil
+}
+
+func diffMapValues(before, after map[string]any) []string {
+	out := []string{}
+	diffAny("", before, true, after, true, &out)
+	sort.Strings(out)
+	return out
+}
+
+func diffAny(path string, before any, beforeOK bool, after any, afterOK bool, out *[]string) {
+	if !beforeOK && !afterOK {
+		return
+	}
+	beforeMap, beforeIsMap := before.(map[string]any)
+	afterMap, afterIsMap := after.(map[string]any)
+	if beforeIsMap || afterIsMap {
+		keysSet := map[string]struct{}{}
+		for key := range beforeMap {
+			keysSet[key] = struct{}{}
+		}
+		for key := range afterMap {
+			keysSet[key] = struct{}{}
+		}
+		keys := make([]string, 0, len(keysSet))
+		for key := range keysSet {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			nextPath := key
+			if path != "" {
+				nextPath = path + "." + key
+			}
+			b, bok := beforeMap[key]
+			a, aok := afterMap[key]
+			diffAny(nextPath, b, bok, a, aok, out)
+		}
+		return
+	}
+
+	if beforeOK && afterOK && valuesEqual(before, after) {
+		return
+	}
+	property := path
+	if property == "" {
+		property = "<root>"
+	}
+	*out = append(*out, fmt.Sprintf("%s : %s -> %s", property, formatDiffValue(before, beforeOK), formatDiffValue(after, afterOK)))
+}
+
+func formatDiffValue(value any, exists bool) string {
+	if !exists {
+		return "<missing>"
+	}
+	encoded, err := json.Marshal(value)
+	if err == nil {
+		return string(encoded)
+	}
+	return fmt.Sprintf("%v", value)
+}
+
+func valuesEqual(a, b any) bool {
+	left, leftErr := json.Marshal(a)
+	right, rightErr := json.Marshal(b)
+	if leftErr == nil && rightErr == nil {
+		return bytes.Equal(left, right)
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+func mergeMapRecursive(dst, src map[string]any) {
+	for key, srcValue := range src {
+		dstValue, hasDst := dst[key]
+		srcMap, srcIsMap := srcValue.(map[string]any)
+		if !hasDst || !srcIsMap {
+			dst[key] = srcValue
+			continue
+		}
+		dstMap, dstIsMap := dstValue.(map[string]any)
+		if !dstIsMap {
+			dst[key] = srcValue
+			continue
+		}
+		mergeMapRecursive(dstMap, srcMap)
+	}
+}
+
+func rollbackLastRestore(cfg Config, logger *AppLogger) error {
+	restoreLogDir := restoreAuditDir(cfg)
+	statePath := filepath.Join(restoreLogDir, lastRestoreStateFileName)
+	stateBytes, err := os.ReadFile(statePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return errors.New("no previous restore state found to rollback")
+		}
+		return err
+	}
+	var state lastRestoreState
+	if err := json.Unmarshal(stateBytes, &state); err != nil {
+		return err
+	}
+	if state.RolledBack {
+		return errors.New("last restore has already been rolled back")
+	}
+
+	manifestBytes, err := os.ReadFile(state.ManifestFile)
+	if err != nil {
+		return err
+	}
+	var manifest rollbackManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return err
+	}
+
+	rollbackReader, err := zip.OpenReader(state.RollbackZip)
+	if err != nil {
+		return err
+	}
+	defer rollbackReader.Close()
+
+	rollbackData := map[string][]byte{}
+	for _, file := range rollbackReader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		rel, ok := normalizeArchivePath(file.Name)
+		if !ok {
+			continue
+		}
+		bytes, err := readZipFile(file)
+		if err != nil {
+			return err
+		}
+		rollbackData[rel] = bytes
+	}
+
+	workspaceRoot, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	reportRows := [][]string{}
+	for _, entry := range manifest.Entries {
+		rel, ok := normalizeArchivePath(entry.Path)
+		if !ok {
+			continue
+		}
+		dest := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
+		if !entry.ExistedPrior {
+			err := os.Remove(dest)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			reportRows = append(reportRows, []string{rel, "removed", "deleted file added by restore"})
+			if logger != nil {
+				logger.Infof("rollback: removed %s", rel)
+			}
+			continue
+		}
+		before, ok := rollbackData[rel]
+		if !ok {
+			return fmt.Errorf("rollback data missing for %s", rel)
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dest, before, 0o644); err != nil {
+			return err
+		}
+		reportRows = append(reportRows, []string{rel, "restored", "restored pre-restore contents"})
+		if logger != nil {
+			logger.Infof("rollback: restored %s", rel)
+		}
+	}
+
+	reportPath := filepath.Join(restoreLogDir, fmt.Sprintf("rollback-%s.csv", time.Now().Format("20060102-150405")))
+	if err := writeCSVReport(reportPath, []string{"path", "action", "detail"}, reportRows); err != nil {
+		return err
+	}
+
+	state.RolledBack = true
+	stateOut, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(statePath, stateOut, 0o644); err != nil {
+		return err
+	}
+	if logger != nil {
+		logger.Successf("rollback complete: restored_changes=%d report=%s", len(reportRows), reportPath)
+	}
+	return nil
+}
+
 func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: plex.base_url=%s", cfg.Plex.BaseURL)
 	logger.Printf("config: plex.token=*** (len=%d)", len(cfg.Plex.Token))
@@ -1304,6 +2264,7 @@ func logConfig(logger *AppLogger, cfg Config) {
 	logger.Printf("config: clean.translate_endpoint=%s", cfg.Clean.TranslateEndpoint)
 	logger.Printf("config: clean.translate_rate_limit_per_minute=%d", cfg.Clean.TranslateRateLimitPerMinute)
 	logger.Printf("config: stats.exclude_words_count=%d", len(cfg.Stats.ExcludeWords))
+	logger.Printf("config: backup.retention_days=%d", cfg.Backup.RetentionDays)
 	logger.Printf("config: template_image=%s", cfg.TemplateImage)
 	logger.Printf("config: type_template_image=%s", cfg.TypeTemplateImage)
 	logger.Printf("config: studio_template_image=%s", cfg.StudioTemplateImage)

@@ -34,6 +34,9 @@ translate_rate_limit_per_minute = 10
 [stats]
 exclude_words = ["xxx", "sample","1","2","3","4","5","6","7","8","9","0","1080p","720p","480p","2160p","4k","8k","uhd","hdrip","brrip","dvdrip","bluray","web-dl","webdl","webrip","hdtv","camrip","dvdscr","dvdscreener","dvdr","dvdrip","dvdscr","dvdscreener","bdrip","brrip","bluray","web-dl","webdl","webrip","hdtv","camrip","dvdscr","dvdscreener","dvdrip","bdrip","brrip","bluray","web-dl","webdl","webrip","hdtv","com","co.uk","net","org","info","biz","us","ca","au","de","fr","es","it","nl","se","no","fi","dk","pl","ru","jp","cn","kr"]
 
+[backup]
+retention_days = 30
+
 [font]
 file = "../fonts/Drips.ttf"
 size = 140

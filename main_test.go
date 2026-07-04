@@ -1,9 +1,11 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -22,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/image/font/basicfont"
 )
 
@@ -1320,6 +1323,239 @@ func TestWriteCleanReport(t *testing.T) {
 	// Embedded double-quote in TitleBefore should be escaped as ""
 	if lines[2] != `"2"|"say ""hello"""|"Say hello"|""|""` {
 		t.Fatalf("unexpected row 2: %q", lines[2])
+	}
+}
+
+func TestMergeTOMLDocumentsAddsAndOverwrites(t *testing.T) {
+	current := []byte(strings.Join([]string{
+		"template_image = \"a.png\"",
+		"",
+		"[plex]",
+		"workers = 4",
+		"retries = 3",
+		"",
+		"[clean]",
+		"translate_endpoint = \"https://old.example\"",
+	}, "\n"))
+	backup := []byte(strings.Join([]string{
+		"template_image = \"b.png\"",
+		"",
+		"[plex]",
+		"workers = 10",
+		"retry_base_ms = 750",
+		"",
+		"[clean]",
+		"translate_endpoint = \"https://new.example\"",
+	}, "\n"))
+
+	merged, err := mergeTOMLDocuments(current, backup)
+	if err != nil {
+		t.Fatalf("mergeTOMLDocuments failed: %v", err)
+	}
+
+	var out map[string]any
+	if err := toml.Unmarshal(merged, &out); err != nil {
+		t.Fatalf("failed to parse merged TOML: %v", err)
+	}
+	if out["template_image"] != "b.png" {
+		t.Fatalf("expected template_image overwrite from backup, got %#v", out["template_image"])
+	}
+	plex, ok := out["plex"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected [plex] table in merged output, got %#v", out["plex"])
+	}
+	if plex["workers"] != int64(10) {
+		t.Fatalf("expected workers overwritten to 10, got %#v", plex["workers"])
+	}
+	if plex["retries"] != int64(3) {
+		t.Fatalf("expected retries preserved at 3, got %#v", plex["retries"])
+	}
+	if plex["retry_base_ms"] != int64(750) {
+		t.Fatalf("expected new key retry_base_ms added, got %#v", plex["retry_base_ms"])
+	}
+}
+
+func TestNormalizeArchivePathRejectsTraversal(t *testing.T) {
+	if _, ok := normalizeArchivePath("../config/config.toml"); ok {
+		t.Fatal("expected traversal path to be rejected")
+	}
+	if got, ok := normalizeArchivePath("./config/config.toml"); !ok || got != "config/config.toml" {
+		t.Fatalf("expected normalized safe path, got=%q ok=%t", got, ok)
+	}
+}
+
+func TestListBackupArchivesSortsNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	older := filepath.Join(dir, "frantic-postr-backup-20260101-010101.zip")
+	newer := filepath.Join(dir, "frantic-postr-backup-20260101-020202.zip")
+	if err := os.WriteFile(older, []byte("older"), 0o644); err != nil {
+		t.Fatalf("failed to write older archive: %v", err)
+	}
+	if err := os.WriteFile(newer, []byte("newer"), 0o644); err != nil {
+		t.Fatalf("failed to write newer archive: %v", err)
+	}
+
+	now := time.Now()
+	if err := os.Chtimes(older, now.Add(-2*time.Minute), now.Add(-2*time.Minute)); err != nil {
+		t.Fatalf("failed to set older mtime: %v", err)
+	}
+	if err := os.Chtimes(newer, now, now); err != nil {
+		t.Fatalf("failed to set newer mtime: %v", err)
+	}
+
+	backups, err := listBackupArchives(dir)
+	if err != nil {
+		t.Fatalf("listBackupArchives failed: %v", err)
+	}
+	if len(backups) != 2 {
+		t.Fatalf("expected 2 backups, got %d", len(backups))
+	}
+	if backups[0].Name != filepath.Base(newer) {
+		t.Fatalf("expected newest backup first, got %q", backups[0].Name)
+	}
+}
+
+func TestApplyRestoredFileMergesTOMLAndCapturesRollback(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "config", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatalf("failed to create dest dir: %v", err)
+	}
+	before := []byte("template_image = \"old.png\"\n[plex]\nworkers = 3\n")
+	if err := os.WriteFile(dest, before, 0o644); err != nil {
+		t.Fatalf("failed to write destination file: %v", err)
+	}
+
+	rollbackZipPath := filepath.Join(dir, "rollback.zip")
+	f, err := os.Create(rollbackZipPath)
+	if err != nil {
+		t.Fatalf("failed to create rollback zip: %v", err)
+	}
+	zw := zip.NewWriter(f)
+
+	manifest := rollbackManifest{}
+	seen := map[string]struct{}{}
+	backup := []byte("template_image = \"new.png\"\n[plex]\nworkers = 8\nretry_base_ms = 500\n")
+	action, _, changed, _, err := applyRestoredFile(dest, "config/config.toml", backup, zw, &manifest, seen, false)
+	if err != nil {
+		t.Fatalf("applyRestoredFile failed: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("failed to close rollback zip writer: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close rollback zip file: %v", err)
+	}
+
+	if action != "merged" || !changed {
+		t.Fatalf("expected merged changed result, got action=%q changed=%t", action, changed)
+	}
+	after, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("failed to read destination file after restore: %v", err)
+	}
+	if !strings.Contains(string(after), "template_image = 'new.png'") {
+		t.Fatalf("expected merged file to include overwritten value, got %q", string(after))
+	}
+	if len(manifest.Entries) != 1 || !manifest.Entries[0].ExistedPrior {
+		t.Fatalf("unexpected rollback manifest: %+v", manifest.Entries)
+	}
+
+	r, err := zip.OpenReader(rollbackZipPath)
+	if err != nil {
+		t.Fatalf("failed to open rollback zip: %v", err)
+	}
+	defer r.Close()
+	if len(r.File) != 1 || r.File[0].Name != "config/config.toml" {
+		t.Fatalf("unexpected rollback zip entries: %+v", r.File)
+	}
+	storedBefore, err := readZipFile(r.File[0])
+	if err != nil {
+		t.Fatalf("failed to read rollback entry: %v", err)
+	}
+	if !bytes.Equal(storedBefore, before) {
+		t.Fatalf("rollback zip should store pre-restore bytes")
+	}
+}
+
+func TestMergeTOMLDocumentsWithChangesUsesPropertyDiffFormat(t *testing.T) {
+	current := []byte("[plex]\nworkers = 4\n")
+	backup := []byte("[plex]\nworkers = 9\nretry_base_ms = 500\n")
+	_, changes, err := mergeTOMLDocumentsWithChanges(current, backup)
+	if err != nil {
+		t.Fatalf("mergeTOMLDocumentsWithChanges failed: %v", err)
+	}
+	if len(changes) == 0 {
+		t.Fatal("expected property-level changes")
+	}
+	joined := strings.Join(changes, " | ")
+	if !strings.Contains(joined, "plex.workers : 4 -> 9") {
+		t.Fatalf("expected workers change in property format, got %q", joined)
+	}
+	if !strings.Contains(joined, "plex.retry_base_ms : <missing> -> 500") {
+		t.Fatalf("expected added property in diff, got %q", joined)
+	}
+}
+
+func TestApplyRestoredFileDryRunDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "config", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatalf("failed creating directory: %v", err)
+	}
+	before := []byte("[plex]\nworkers = 4\n")
+	if err := os.WriteFile(dest, before, 0o644); err != nil {
+		t.Fatalf("failed writing file: %v", err)
+	}
+	backup := []byte("[plex]\nworkers = 12\n")
+
+	action, _, changed, changes, err := applyRestoredFile(dest, "config/config.toml", backup, nil, nil, nil, true)
+	if err != nil {
+		t.Fatalf("applyRestoredFile dry run failed: %v", err)
+	}
+	if !changed || action != "merged" {
+		t.Fatalf("expected merged+changed dry run, got action=%q changed=%t", action, changed)
+	}
+	if len(changes) == 0 || !strings.Contains(changes[0], " : ") {
+		t.Fatalf("expected property style changes, got %+v", changes)
+	}
+	after, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("failed reading file after dry run: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("dry run should not write file contents")
+	}
+}
+
+func TestApplyBackupRetentionRemovesOldArchives(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "frantic-postr-backup-old.zip")
+	newPath := filepath.Join(dir, "frantic-postr-backup-new.zip")
+	if err := os.WriteFile(oldPath, []byte("old"), 0o644); err != nil {
+		t.Fatalf("failed to create old backup: %v", err)
+	}
+	if err := os.WriteFile(newPath, []byte("new"), 0o644); err != nil {
+		t.Fatalf("failed to create new backup: %v", err)
+	}
+	now := time.Now()
+	if err := os.Chtimes(oldPath, now.AddDate(0, 0, -40), now.AddDate(0, 0, -40)); err != nil {
+		t.Fatalf("failed to age old backup: %v", err)
+	}
+	if err := os.Chtimes(newPath, now, now); err != nil {
+		t.Fatalf("failed to set new backup mtime: %v", err)
+	}
+
+	cfg := Config{}
+	cfg.Backup.RetentionDays = 30
+	if err := applyBackupRetention(cfg, dir, newTestLogger(io.Discard, io.Discard)); err != nil {
+		t.Fatalf("applyBackupRetention failed: %v", err)
+	}
+	if _, err := os.Stat(oldPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected old backup to be removed, err=%v", err)
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("expected new backup to remain, err=%v", err)
 	}
 }
 
