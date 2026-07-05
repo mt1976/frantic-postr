@@ -270,6 +270,7 @@ type backupCandidate struct {
 	Name    string
 	Path    string
 	ModTime time.Time
+	Host    string
 }
 
 type restoreLogRow struct {
@@ -1407,6 +1408,46 @@ func backupArchiveDir(workspaceRoot string) string {
 	return filepath.Join(workspaceRoot, backupDirName)
 }
 
+func artifactHostname() string {
+	host, err := os.Hostname()
+	if err != nil {
+		return "unknown-host"
+	}
+	host = sanitizeFileName(host)
+	if strings.TrimSpace(host) == "" {
+		return "unknown-host"
+	}
+	return host
+}
+
+func parseBackupHostname(name string) string {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	prefix := appDisplayName + "-backup-"
+	if !strings.HasPrefix(stem, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(stem, prefix)
+	if len(rest) < 15 {
+		return ""
+	}
+	timestamp := rest[len(rest)-15:]
+	if _, err := time.Parse("20060102-150405", timestamp); err != nil {
+		return ""
+	}
+	if len(rest) == 15 {
+		return ""
+	}
+	if rest[len(rest)-16] != '-' {
+		return ""
+	}
+	host := strings.TrimSpace(rest[:len(rest)-16])
+	if host == "" {
+		return ""
+	}
+	return host
+}
+
 func createBackupArchive(cfg Config, configPath string, logger *AppLogger) error {
 	workspaceRoot, err := os.Getwd()
 	if err != nil {
@@ -1418,7 +1459,7 @@ func createBackupArchive(cfg Config, configPath string, logger *AppLogger) error
 		return fmt.Errorf("create backup dir: %w", err)
 	}
 
-	archiveName := fmt.Sprintf("%s-backup-%s.zip", appDisplayName, time.Now().Format("20060102-150405"))
+	archiveName := fmt.Sprintf("%s-backup-%s-%s.zip", appDisplayName, artifactHostname(), time.Now().Format("20060102-150405"))
 	archivePath := filepath.Join(backupDir, archiveName)
 
 	archiveFile, err := os.Create(archivePath)
@@ -1610,11 +1651,7 @@ func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) erro
 	dryRun := trailModeEnabled
 
 	if isInteractiveTerminal() {
-		prompt := fmt.Sprintf("Restore backup %q", filepath.Base(selectedBackup.Path))
-		if dryRun {
-			prompt = fmt.Sprintf("Dry-run restore backup %q (-trail active)", filepath.Base(selectedBackup.Path))
-		}
-		proceed, err := promptYesNo(prompt)
+		proceed, err := confirmRestoreBackup(selectedBackup, dryRun)
 		if err != nil {
 			return err
 		}
@@ -1628,10 +1665,11 @@ func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) erro
 	if err := os.MkdirAll(restoreLogDir, 0o755); err != nil {
 		return fmt.Errorf("create restore log dir: %w", err)
 	}
+	host := artifactHostname()
 	timestamp := time.Now().Format("20060102-150405")
-	reportName := fmt.Sprintf("restore-%s.csv", timestamp)
+	reportName := fmt.Sprintf("restore-%s-%s.csv", host, timestamp)
 	if dryRun {
-		reportName = fmt.Sprintf("restore-dry-run-%s.csv", timestamp)
+		reportName = fmt.Sprintf("restore-dry-run-%s-%s.csv", host, timestamp)
 	}
 	reportPath := filepath.Join(restoreLogDir, reportName)
 
@@ -1643,8 +1681,8 @@ func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) erro
 		seenManifest  map[string]struct{}
 	)
 	if !dryRun {
-		restoreZipPath = filepath.Join(restoreLogDir, fmt.Sprintf("rollback-pre-restore-%s.zip", timestamp))
-		manifestPath = filepath.Join(restoreLogDir, fmt.Sprintf("restore-manifest-%s.json", timestamp))
+		restoreZipPath = filepath.Join(restoreLogDir, fmt.Sprintf("rollback-pre-restore-%s-%s.zip", host, timestamp))
+		manifestPath = filepath.Join(restoreLogDir, fmt.Sprintf("restore-manifest-%s-%s.json", host, timestamp))
 		rollbackZipFile, err := os.Create(restoreZipPath)
 		if err != nil {
 			return fmt.Errorf("create rollback zip: %w", err)
@@ -1785,6 +1823,9 @@ func selectBackupArchive(backupsDir, filter string) (backupCandidate, error) {
 		return backupCandidate{}, fmt.Errorf("no backup archives found in %s", backupsDir)
 	}
 	if strings.TrimSpace(filter) == "" {
+		if isInteractiveTerminal() {
+			return promptBackupChoice(backups, "Available backups. Select one to restore:")
+		}
 		return backups[0], nil
 	}
 
@@ -1805,14 +1846,14 @@ func selectBackupArchive(backupsDir, filter string) (backupCandidate, error) {
 		}
 		return matches[0], nil
 	}
-	return promptBackupChoice(matches)
+	return promptBackupChoice(matches, "Multiple backups matched. Select one to restore:")
 }
 
-func promptBackupChoice(candidates []backupCandidate) (backupCandidate, error) {
+func promptBackupChoice(candidates []backupCandidate, title string) (backupCandidate, error) {
 	feedback := ""
 	page := 0
 	dataHeight := classicDataAreaHeight()
-	headerLines := []string{"Multiple backups matched. Select one to restore:", ""}
+	headerLines := []string{title, ""}
 	itemRows := dataHeight - len(headerLines)
 	if itemRows < 1 {
 		itemRows = 1
@@ -1824,7 +1865,11 @@ func promptBackupChoice(candidates []backupCandidate) (backupCandidate, error) {
 		content = append(content, headerLines...)
 		for idx := start; idx < end; idx++ {
 			candidate := candidates[idx]
-			content = append(content, fmt.Sprintf("[%d] %s (%s)", idx+1, candidate.Name, candidate.ModTime.Format("2006-01-02 15:04:05")))
+			host := candidate.Host
+			if strings.TrimSpace(host) == "" {
+				host = "unknown"
+			}
+			content = append(content, fmt.Sprintf("[%d] %s | Date: %s | Host: %s", idx+1, candidate.Name, formatBackupDateTime(candidate.ModTime), host))
 		}
 		if totalPages > 1 {
 			content = append(content, "")
@@ -1857,6 +1902,44 @@ func promptBackupChoice(candidates []backupCandidate) (backupCandidate, error) {
 	}
 }
 
+func formatBackupDateTime(value time.Time) string {
+	return value.Format("02 Jan 2006 at 15:04:05")
+}
+
+func confirmRestoreBackup(selected backupCandidate, dryRun bool) (bool, error) {
+	modeText := "Mode: Restore"
+	if dryRun {
+		modeText = "Mode: Dry-run restore (-trail active)"
+	}
+	host := selected.Host
+	if strings.TrimSpace(host) == "" {
+		host = "unknown"
+	}
+	content := []string{
+		"Confirm backup restore:",
+		"",
+		fmt.Sprintf("Filename: %s", selected.Name),
+		fmt.Sprintf("Date: %s", formatBackupDateTime(selected.ModTime)),
+		fmt.Sprintf("Host: %s", host),
+		modeText,
+	}
+	feedback := ""
+	for {
+		input, err := promptWithClassicLayout(content, "Input: Y or N", feedback)
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(input)) {
+		case "y", "yes":
+			return true, nil
+		case "n", "no", "":
+			return false, nil
+		default:
+			feedback = "Please answer Y or N."
+		}
+	}
+}
+
 func listBackupArchives(backupsDir string) ([]backupCandidate, error) {
 	entries, err := os.ReadDir(backupsDir)
 	if err != nil {
@@ -1882,6 +1965,7 @@ func listBackupArchives(backupsDir string) ([]backupCandidate, error) {
 			Name:    name,
 			Path:    filepath.Join(backupsDir, name),
 			ModTime: info.ModTime(),
+			Host:    parseBackupHostname(name),
 		})
 	}
 	sort.Slice(backups, func(i, j int) bool {
@@ -2228,7 +2312,7 @@ func rollbackLastRestore(cfg Config, logger *AppLogger) error {
 		}
 	}
 
-	reportPath := filepath.Join(restoreLogDir, fmt.Sprintf("rollback-%s.csv", time.Now().Format("20060102-150405")))
+	reportPath := filepath.Join(restoreLogDir, fmt.Sprintf("rollback-%s-%s.csv", artifactHostname(), time.Now().Format("20060102-150405")))
 	if err := writeCSVReport(reportPath, []string{"path", "action", "detail"}, reportRows); err != nil {
 		return err
 	}
@@ -2728,7 +2812,21 @@ func promptWithClassicLayout(content []string, prompt, feedback string) (string,
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
-	return strings.TrimSpace(input), nil
+	trimmed := strings.TrimSpace(input)
+	if isPromptExitCommand(trimmed) {
+		fmt.Println("Exiting to command line.")
+		os.Exit(0)
+	}
+	return trimmed, nil
+}
+
+func isPromptExitCommand(input string) bool {
+	switch strings.ToUpper(strings.TrimSpace(input)) {
+	case "Q", "QUIT", "EX", "EXIT", "BYE":
+		return true
+	default:
+		return false
+	}
 }
 
 func classicDataAreaHeight() int {

@@ -1415,6 +1415,62 @@ func TestListBackupArchivesSortsNewestFirst(t *testing.T) {
 	}
 }
 
+func TestFormatBackupDateTime(t *testing.T) {
+	value := time.Date(2026, time.July, 5, 14, 22, 39, 0, time.UTC)
+	got := formatBackupDateTime(value)
+	expected := "05 Jul 2026 at 14:22:39"
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestIsPromptExitCommand(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{input: "q", want: true},
+		{input: "Q", want: true},
+		{input: "quit", want: true},
+		{input: "EX", want: true},
+		{input: "exit", want: true},
+		{input: "Bye", want: true},
+		{input: "  quit  ", want: true},
+		{input: "", want: false},
+		{input: "y", want: false},
+		{input: "next", want: false},
+	}
+
+	for _, tc := range cases {
+		got := isPromptExitCommand(tc.input)
+		if got != tc.want {
+			t.Fatalf("input %q: expected %t got %t", tc.input, tc.want, got)
+		}
+	}
+}
+
+func TestParseBackupHostname(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileName string
+		expect   string
+	}{
+		{name: "hostname present", fileName: "frantic-postr-backup-media-node-20260705-111500.zip", expect: "media-node"},
+		{name: "legacy filename no hostname", fileName: "frantic-postr-backup-20260705-111500.zip", expect: ""},
+		{name: "uppercase extension", fileName: "frantic-postr-backup-host-a-20260705-111500.ZIP", expect: "host-a"},
+		{name: "invalid timestamp", fileName: "frantic-postr-backup-host-invalid.zip", expect: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseBackupHostname(tc.fileName)
+			if got != tc.expect {
+				t.Fatalf("expected %q got %q", tc.expect, got)
+			}
+		})
+	}
+}
+
 func TestApplyRestoredFileMergesTOMLAndCapturesRollback(t *testing.T) {
 	dir := t.TempDir()
 	dest := filepath.Join(dir, "config", "config.toml")

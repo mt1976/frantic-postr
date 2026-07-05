@@ -63,7 +63,7 @@ Backup contents include:
 
 Backup archives are named like:
 
-- `frantic-postr-backup-yyyymmdd-hhmmss.zip`
+- `frantic-postr-backup-hostname-yyyymmdd-hhmmss.zip`
 
 Backup retention is configured in `config/config.toml`:
 
@@ -74,11 +74,14 @@ retention_days = 30
 
 When `retention_days > 0`, backups older than that age are automatically removed during `-backup`.
 
-Restore from the newest backup:
+Restore from a backup:
 
 ```bash
 go run . -config config/config.toml -restore
 ```
+
+In interactive mode, `-restore` shows all available backups, lets you choose one, then asks for confirmation.
+The confirmation screen displays the filename and timestamp as `Date: DD MMM YYYY at HH:MM:ss`.
 
 Restore a specific backup by exact or partial filename:
 
@@ -106,6 +109,14 @@ Restore merge behavior:
 - Non-TOML managed files are replaced from backup.
 
 Every restore writes a detailed change log CSV under `output/restore/`.
+
+Restore and rollback artifacts also include hostname in filenames, for example:
+
+- `restore-hostname-yyyymmdd-hhmmss.csv`
+- `restore-dry-run-hostname-yyyymmdd-hhmmss.csv`
+- `rollback-pre-restore-hostname-yyyymmdd-hhmmss.zip`
+- `restore-manifest-hostname-yyyymmdd-hhmmss.json`
+- `rollback-hostname-yyyymmdd-hhmmss.csv`
 
 Rollback the most recent restore run:
 
