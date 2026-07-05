@@ -311,6 +311,7 @@ var (
 	translateRateLimitMu   sync.Mutex
 	nextTranslateRequestAt time.Time
 	stdinReader            = bufio.NewReader(os.Stdin)
+	promptScreenModeLabel  = "Interactive"
 )
 
 const appDisplayName = "frantic-postr"
@@ -624,6 +625,7 @@ func main() {
 	if (*cloneLibraryMode || *collExport || importMode || *backupMode || *restoreMode || *rollbackMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) && *uploadPosters {
 		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
+	setPromptScreenModeLabel(derivePromptScreenModeLabel(*genPostersMode, *uploadPosters, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, *cloneLibraryMode, *labelMode, *collInject, *cleanMode, *translateMode, translateOnlyMode))
 	labelsToAdd, err := parseLabelList(*labelAdd)
 	if err != nil {
 		log.Fatalf("invalid -add labels: %v", err)
@@ -2766,6 +2768,165 @@ func uiHeaderRow(appName, dateText string, width int) string {
 	return string(left) + strings.Repeat(" ", spaceLen) + string(right)
 }
 
+func setPromptScreenModeLabel(label string) {
+	trimmed := strings.TrimSpace(label)
+	if trimmed == "" {
+		promptScreenModeLabel = "Interactive"
+		return
+	}
+	promptScreenModeLabel = trimmed
+}
+
+func derivePromptScreenModeLabel(genPostersMode, uploadPosters, collDupes, deleteNonSmart, pathCleanMode, statsMode, collExport, collImport, backupMode, restoreMode, rollbackMode, cloneLibraryMode, labelMode, collInject, cleanMode, translateMode, translateOnlyMode bool) string {
+	switch {
+	case genPostersMode && uploadPosters:
+		return "Generate and Upload Posters"
+	case genPostersMode:
+		return "Generate Posters"
+	case collDupes:
+		return "Collection Duplicates"
+	case deleteNonSmart:
+		return "Delete Non-Smart Collections"
+	case pathCleanMode:
+		return "Path Clean"
+	case statsMode:
+		return "Stats"
+	case collExport:
+		return "Export Collections"
+	case collImport:
+		return "Import Collections"
+	case backupMode:
+		return "Backup"
+	case restoreMode:
+		return "Restore"
+	case rollbackMode:
+		return "Rollback"
+	case cloneLibraryMode:
+		return "Clone Library"
+	case labelMode:
+		return "Label"
+	case collInject:
+		return "Inject Collections"
+	case cleanMode && translateMode:
+		return "Translate and Clean"
+	case cleanMode:
+		return "Clean"
+	case translateOnlyMode:
+		return "Translate"
+	default:
+		return "Interactive"
+	}
+}
+
+func uiPromptTitleRow(modeLabel, appName, dateText string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	row := []rune(strings.Repeat(" ", width))
+	left := []rune(strings.TrimSpace(modeLabel))
+	center := []rune(strings.TrimSpace(appName))
+	right := []rune(strings.TrimSpace(dateText))
+
+	rightStart := width - len(right)
+	if rightStart < 0 {
+		rightStart = 0
+		right = right[:width]
+	}
+	for i := 0; i < len(right) && rightStart+i < width; i++ {
+		row[rightStart+i] = right[i]
+	}
+
+	centerStart := (width - len(center)) / 2
+	if centerStart < 0 {
+		centerStart = 0
+	}
+	centerEndLimit := rightStart - 1
+	for i := 0; i < len(center); i++ {
+		pos := centerStart + i
+		if pos < 0 || pos >= width {
+			continue
+		}
+		if centerEndLimit >= 0 && pos > centerEndLimit {
+			break
+		}
+		row[pos] = center[i]
+	}
+
+	leftEndLimit := centerStart - 1
+	for i := 0; i < len(left); i++ {
+		if i >= width {
+			break
+		}
+		if leftEndLimit >= 0 && i > leftEndLimit {
+			break
+		}
+		row[i] = left[i]
+	}
+
+	return string(row)
+}
+
+const (
+	ansiReset  = "\033[0m"
+	ansiDim    = "\033[2m"
+	ansiBright = "\033[1m"
+)
+
+func styleDim(in string) string {
+	if in == "" {
+		return in
+	}
+	return ansiDim + in + ansiReset
+}
+
+func styleBright(in string) string {
+	if in == "" {
+		return in
+	}
+	return ansiBright + in + ansiReset
+}
+
+func styleIndexedValuePart(part string) (string, bool) {
+	if !strings.HasPrefix(part, "[") {
+		return "", false
+	}
+	close := strings.Index(part, "]")
+	if close < 2 || close+1 >= len(part) || part[close+1] != ' ' {
+		return "", false
+	}
+	for _, r := range part[1:close] {
+		if !unicode.IsDigit(r) {
+			return "", false
+		}
+	}
+	prefix := part[:close+2]
+	value := part[close+2:]
+	if strings.TrimSpace(value) == "" {
+		return styleDim(part), true
+	}
+	return styleDim(prefix) + styleBright(value), true
+}
+
+func styleDisplayLine(in string) string {
+	if in == "" || strings.TrimSpace(in) == "" {
+		return in
+	}
+	parts := strings.Split(in, " | ")
+	styled := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if field, value, ok := strings.Cut(part, ": "); ok {
+			styled = append(styled, styleDim(field+": ")+styleBright(value))
+			continue
+		}
+		if indexed, ok := styleIndexedValuePart(part); ok {
+			styled = append(styled, indexed)
+			continue
+		}
+		styled = append(styled, styleDim(part))
+	}
+	return strings.Join(styled, styleDim(" | "))
+}
+
 func renderClassicPromptScreen(content []string, prompt, feedback string) {
 	if !isInteractiveTerminal() {
 		for _, line := range content {
@@ -2788,22 +2949,21 @@ func renderClassicPromptScreen(content []string, prompt, feedback string) {
 
 	fmt.Print("\033[2J\033[H")
 	dateText := time.Now().Format("2006-01-02")
-	header := uiHeaderRow(appDisplayName, dateText, width)
-	subHeader := uiHeaderRow(appDisplayName+" interactive", dateText, width)
-	fmt.Println(fitToWidth(header, width))
-	fmt.Println(fitToWidth(subHeader, width))
-	fmt.Println(uiSeparator(width))
+	header := uiPromptTitleRow(promptScreenModeLabel, appDisplayName, dateText, width)
+	fmt.Println("")
+	fmt.Println(styleBright(fitToWidth(header, width)))
+	fmt.Println(styleDim(uiSeparator(width)))
 
 	for i := 0; i < contentHeight; i++ {
 		if i < len(content) {
-			fmt.Println(fitToWidth(content[i], width))
+			fmt.Println(styleDisplayLine(fitToWidth(content[i], width)))
 		} else {
-			fmt.Println(fitToWidth("", width))
+			fmt.Println(styleDim(fitToWidth("", width)))
 		}
 	}
-	fmt.Println(uiSeparator(width))
-	fmt.Println(fitToWidth(prompt, width))
-	fmt.Println(fitToWidth(feedback, width))
+	fmt.Println(styleDim(uiSeparator(width)))
+	fmt.Println(styleBright(fitToWidth(prompt, width)))
+	fmt.Println(styleDisplayLine(fitToWidth(feedback, width)))
 }
 
 func promptWithClassicLayout(content []string, prompt, feedback string) (string, error) {
