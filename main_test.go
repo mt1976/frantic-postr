@@ -478,6 +478,96 @@ func TestFetchCollectionItemsUsesItemsPath(t *testing.T) {
 	}
 }
 
+func TestLabelTypeCollectionItemsFromCollectionSkipsWhenNotTypeCollection(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		t.Fatalf("expected no Plex requests when collection is not in type set, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	var cfg Config
+	cfg.Plex.BaseURL = server.URL
+	cfg.Plex.Token = "secret-token"
+	cfg.TypeCollectionSet = map[string]struct{}{
+		"sometype": {},
+	}
+
+	updated, skipped, err := labelTypeCollectionItemsFromCollection(
+		server.Client(),
+		cfg,
+		plexCollection{RatingKey: "357900", Title: "Other"},
+		"Other",
+		newTestLogger(io.Discard, io.Discard),
+	)
+	if err != nil {
+		t.Fatalf("labelTypeCollectionItemsFromCollection failed: %v", err)
+	}
+	if updated != 0 || skipped != 0 {
+		t.Fatalf("expected no-op result, got updated=%d skipped=%d", updated, skipped)
+	}
+	if requestCount != 0 {
+		t.Fatalf("expected zero requests, got %d", requestCount)
+	}
+}
+
+func TestLabelTypeCollectionItemsFromCollectionAddsLabelWithoutDuplicates(t *testing.T) {
+	putCalls := 0
+	var putLabels []string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/library/collections/357900/items":
+			_, _ = w.Write([]byte(`<MediaContainer size="2"><Video ratingKey="365142" title="Needs Label"><Label tag="Existing"/></Video><Video ratingKey="365143" title="Already Labeled"><Label tag="My Type Collection"/></Video></MediaContainer>`))
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/library/metadata/365142":
+			putCalls++
+			q := r.URL.Query()
+			putLabels = append(putLabels, q.Get("label[0].tag.tag"), q.Get("label[1].tag.tag"))
+			w.WriteHeader(http.StatusOK)
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/library/metadata/365143":
+			t.Fatalf("did not expect PUT for item that already has target label")
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var cfg Config
+	cfg.Plex.BaseURL = server.URL
+	cfg.Plex.Token = "secret-token"
+	cfg.Plex.Retries = 1
+	cfg.Plex.RetryBaseMs = 1
+	cfg.Plex.RetryMaxMs = 1
+	cfg.TypeCollectionSet = map[string]struct{}{
+		"mytypecollection": {},
+	}
+
+	updated, skipped, err := labelTypeCollectionItemsFromCollection(
+		server.Client(),
+		cfg,
+		plexCollection{RatingKey: "357900", Title: "My Type Collection"},
+		"My Type Collection",
+		newTestLogger(io.Discard, io.Discard),
+	)
+	if err != nil {
+		t.Fatalf("labelTypeCollectionItemsFromCollection failed: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("expected 1 updated item, got %d", updated)
+	}
+	if skipped != 1 {
+		t.Fatalf("expected 1 skipped item, got %d", skipped)
+	}
+	if putCalls != 1 {
+		t.Fatalf("expected exactly one label update call, got %d", putCalls)
+	}
+	if len(putLabels) != 2 || putLabels[0] != "Existing" || putLabels[1] != "My Type Collection" {
+		t.Fatalf("unexpected merged labels in PUT call: %v", putLabels)
+	}
+}
+
 func TestBuildDuplicateCollectionRowsGroupsByTitle(t *testing.T) {
 	rows, dupGroups := buildDuplicateCollectionRows([]collectionInventoryEntry{
 		{Title: "Duplicate", RatingKey: "1", ItemCount: 3, Smart: true},

@@ -30,6 +30,19 @@ To also upload each generated poster and set it as that collection's poster in P
 go run . -config config/config.toml -gen-posters -upload-posters
 ```
 
+To also add collection-name labels to items while generating posters, for collections listed in `type_collections_file`, add `-label-types`:
+
+```bash
+go run . -config config/config.toml -gen-posters -label-types
+```
+
+Behavior notes for `-label-types`:
+
+- Only collections that match entries in `type_collections_file` are processed.
+- Labels are additive: existing labels are preserved.
+- If an item already has the collection-name label, no update is made for that item.
+- The flag only applies to `-gen-posters`; in other modes it is ignored and an error is logged.
+
 To keep request chatter out of the terminal while still writing everything to the log file, add `-quiet`:
 
 ```bash

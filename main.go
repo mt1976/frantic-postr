@@ -532,6 +532,7 @@ func main() {
 	trialMode := flag.Bool("trial", false, "Alias for -trail")
 	uploadPosters := flag.Bool("upload-posters", false, "Upload generated posters to Plex collections")
 	genPostersMode := flag.Bool("gen-posters", false, "Generate collection posters for the selected library or libraries")
+	labelTypeCollectionItemsMode := flag.Bool("label-types", false, "When used with -gen-posters, add the matched type collection name as a label on items in that collection")
 	collDupes := flag.Bool("coll-dupes", false, "Report duplicate collection names in a selected library to a CSV file")
 	deleteNonSmart := flag.Bool("coll-delete-non-smart", false, "Delete all non-smart collections from a selected library and write a CSV audit")
 	pathCleanMode := flag.Bool("coll-path-clean", false, "Clean titles in a selected collection by rebuilding them from file paths")
@@ -625,6 +626,9 @@ func main() {
 	if (*cloneLibraryMode || *collExport || importMode || *backupMode || *restoreMode || *rollbackMode || *labelMode || *collInject || *cleanMode || translateOnlyMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) && *uploadPosters {
 		log.Fatal("invalid flags: -upload-posters is not used with clone/import/export modes")
 	}
+	if !*genPostersMode && *labelTypeCollectionItemsMode {
+		log.Fatal("invalid flags: -label-types only works with -gen-posters; don't be silly")
+	}
 	setPromptScreenModeLabel(derivePromptScreenModeLabel(*genPostersMode, *uploadPosters, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, *cloneLibraryMode, *labelMode, *collInject, *cleanMode, *translateMode, translateOnlyMode))
 	labelsToAdd, err := parseLabelList(*labelAdd)
 	if err != nil {
@@ -645,7 +649,7 @@ func main() {
 	defer closeLogger()
 
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
 	if *backupMode {
 		if err := createBackupArchive(opsCfg, *configPath, logger); err != nil {
 			logger.Fatalf("backup failed: %v", err)
@@ -675,6 +679,7 @@ func main() {
 	logConfig(logger, cfg)
 	effectiveUpdateCategoryMode := *updateCategoryMode
 	effectiveOnlyCategoryMode := *onlyCategoryMode
+	effectiveLabelTypeCollectionItemsMode := *labelTypeCollectionItemsMode
 	if !*labelMode && (effectiveUpdateCategoryMode || effectiveOnlyCategoryMode) {
 		logger.Errorf("invalid flags: -update-category and -only-category only work with -label; ignoring")
 		effectiveUpdateCategoryMode = false
@@ -683,7 +688,7 @@ func main() {
 	if effectiveOnlyCategoryMode && effectiveUpdateCategoryMode {
 		logger.Warningf("label mode: -only-category takes precedence over -update-category")
 	}
-	logger.Printf("config: update_category=%t only_category=%t", effectiveUpdateCategoryMode, effectiveOnlyCategoryMode)
+	logger.Printf("config: update_category=%t only_category=%t label_types=%t", effectiveUpdateCategoryMode, effectiveOnlyCategoryMode, effectiveLabelTypeCollectionItemsMode)
 	if *collExport {
 		logger.Printf("config: coll_export_file=%s", resolvedExportFile)
 	}
@@ -853,7 +858,7 @@ func main() {
 				}
 				logger.Printf("collections fetched: library=%s count=%d", section.Title, len(collections))
 
-				if err := processCollections(client, cfg, section.Title, collections, *uploadPosters, logger); err != nil {
+				if err := processCollections(client, cfg, section.Title, collections, *uploadPosters, effectiveLabelTypeCollectionItemsMode, logger); err != nil {
 					errCh <- fmt.Errorf("process %s: %w", section.Title, err)
 					return
 				}
@@ -5353,18 +5358,18 @@ func parseSelectionInput(input string, max int) ([]int, error) {
 	return indices, nil
 }
 
-func processCollections(client *http.Client, cfg Config, libraryName string, collections []plexCollection, upload bool, logger *AppLogger) error {
+func processCollections(client *http.Client, cfg Config, libraryName string, collections []plexCollection, upload bool, labelTypeCollectionItems bool, logger *AppLogger) error {
 	outDir := filepath.Join(cfg.OutputDir, sanitizeFileName(libraryName))
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
 	logger.Printf("output dir ready: %s", outDir)
-	collections = disambiguateCollectionsByGUID(collections)
+	displayCollections := disambiguateCollectionsByGUID(collections)
 	workerCount := cfg.Plex.Workers
 	if workerCount <= 0 {
 		workerCount = 1
 	}
-	logger.Infof("poster mode: collections=%d workers=%d upload=%t", len(collections), workerCount, upload)
+	logger.Infof("poster mode: collections=%d workers=%d upload=%t label_type_items=%t", len(collections), workerCount, upload, labelTypeCollectionItems)
 
 	progress := newProgressTracker(logger, "gen posters", len(collections))
 	defer progress.Finish()
@@ -5372,6 +5377,7 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 	type posterJob struct {
 		index      int
 		collection plexCollection
+		labelName  string
 	}
 	type posterResult struct {
 		index int
@@ -5388,39 +5394,50 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				collection := job.collection
+				displayCollection := job.collection
 				func() {
 					defer progress.Advance()
 
-					templatePath, backgroundName := selectPosterTemplate(cfg, collection.Title)
+					templatePath, backgroundName := selectPosterTemplate(cfg, displayCollection.Title)
 					posterCfg := cfg
 					posterCfg.TemplateImage = templatePath
-					outputPath := buildOutputPath(outDir, collection.Title, templatePath)
-					logger.Printf("creating poster: collection=%q guid=%q background=%s output=%s", collection.Title, collection.GUID, backgroundName, outputPath)
-					if err := renderCollectionPoster(posterCfg, collection.Title, outputPath); err != nil {
-						results <- posterResult{index: job.index, err: fmt.Errorf("render %q: %w", collection.Title, err)}
+					outputPath := buildOutputPath(outDir, displayCollection.Title, templatePath)
+					logger.Printf("creating poster: collection=%q guid=%q background=%s output=%s", displayCollection.Title, displayCollection.GUID, backgroundName, outputPath)
+					if err := renderCollectionPoster(posterCfg, displayCollection.Title, outputPath); err != nil {
+						results <- posterResult{index: job.index, err: fmt.Errorf("render %q: %w", displayCollection.Title, err)}
 						return
 					}
 					logger.Successf("poster created: %s", outputPath)
 
 					if upload {
-						if err := uploadCollectionPoster(client, cfg, collection, outputPath, logger); err != nil {
-							results <- posterResult{index: job.index, err: fmt.Errorf("upload poster for %q: %w", collection.Title, err)}
+						if err := uploadCollectionPoster(client, cfg, displayCollection, outputPath, logger); err != nil {
+							results <- posterResult{index: job.index, err: fmt.Errorf("upload poster for %q: %w", displayCollection.Title, err)}
 							return
+						}
+					}
+
+					if labelTypeCollectionItems {
+						labelAdded, labelSkipped, err := labelTypeCollectionItemsFromCollection(client, cfg, displayCollection, job.labelName, logger)
+						if err != nil {
+							results <- posterResult{index: job.index, err: fmt.Errorf("label collection items for %q: %w", job.labelName, err)}
+							return
+						}
+						if labelAdded > 0 || labelSkipped > 0 {
+							logger.Infof("poster mode labels: collection=%q labels_added=%d skipped=%d", job.labelName, labelAdded, labelSkipped)
 						}
 					}
 
 					results <- posterResult{
 						index: job.index,
-						row:   []string{collection.Title, collection.GUID, collection.RatingKey, backgroundName, outputPath},
+						row:   []string{displayCollection.Title, displayCollection.GUID, displayCollection.RatingKey, backgroundName, outputPath},
 					}
 				}()
 			}
 		}()
 	}
 
-	for index, collection := range collections {
-		jobs <- posterJob{index: index, collection: collection}
+	for index := range displayCollections {
+		jobs <- posterJob{index: index, collection: displayCollections[index], labelName: collections[index].Title}
 	}
 	close(jobs)
 	wg.Wait()
@@ -5439,7 +5456,7 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 		return fmt.Errorf("poster generation failed: %s", strings.Join(errs, "; "))
 	}
 
-	reportRows := make([][]string, 0, len(collections))
+	reportRows := make([][]string, 0, len(displayCollections))
 	for _, row := range reportRowsByIndex {
 		if len(row) == 0 {
 			continue
@@ -5454,6 +5471,53 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 		logger.Infof("poster report: written %s (%d rows)", reportPath, len(reportRows))
 	}
 	return nil
+}
+
+func isTypeCollection(cfg Config, collectionName string) bool {
+	key := normalizeCollectionMatchKey(collectionName)
+	if key == "" {
+		return false
+	}
+	_, ok := cfg.TypeCollectionSet[key]
+	return ok
+}
+
+func labelTypeCollectionItemsFromCollection(client *http.Client, cfg Config, collection plexCollection, collectionName string, logger *AppLogger) (int, int, error) {
+	if !isTypeCollection(cfg, collectionName) {
+		return 0, 0, nil
+	}
+	if strings.TrimSpace(collection.RatingKey) == "" {
+		return 0, 0, errors.New("missing collection rating key")
+	}
+	labelToAdd := strings.TrimSpace(collectionName)
+	if labelToAdd == "" {
+		return 0, 0, nil
+	}
+
+	items, err := fetchCollectionItems(client, cfg, collection.RatingKey, logger)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	updated := 0
+	skipped := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.RatingKey) == "" {
+			skipped++
+			continue
+		}
+		merged, changed := mergeLabels(item.Labels, []string{labelToAdd})
+		if !changed {
+			skipped++
+			continue
+		}
+		if err := updateLibraryItemLabels(client, cfg, item.RatingKey, merged, logger); err != nil {
+			return updated, skipped, err
+		}
+		updated++
+	}
+
+	return updated, skipped, nil
 }
 
 func selectPosterTemplate(cfg Config, collectionTitle string) (string, string) {
