@@ -1,0 +1,7 @@
+[plex]
+base_url = 'http://192.168.1.195:32400'
+retries = 6
+retry_base_ms = 500
+retry_max_ms = 50000
+token = 'yooyQkcTthoasndvsQnU'
+workers = 10

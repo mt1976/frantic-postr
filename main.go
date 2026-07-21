@@ -158,9 +158,9 @@ type plexSectionPref struct {
 }
 
 type plexSection struct {
-	Key   string `xml:"key,attr"`
-	Title string `xml:"title,attr"`
-	Type  string `xml:"type,attr"`
+	Key   string `xml:"key,attr" json:"key"`
+	Title string `xml:"title,attr" json:"title"`
+	Type  string `xml:"type,attr" json:"type"`
 }
 
 type cleanReportRow struct {
@@ -325,11 +325,14 @@ type AppLogger struct {
 	console *log.Logger
 	file    *log.Logger
 	quiet   bool
+	logCallback      func(line string)
+	progressCallback func(label string, current, total int, final bool)
 }
 
 type ProgressTracker struct {
 	console *log.Logger
-	enabled bool
+	renderConsole bool
+	onUpdate      func(label string, current, total int, final bool)
 	label   string
 	total   int
 	current int
@@ -337,16 +340,33 @@ type ProgressTracker struct {
 }
 
 func newProgressTracker(logger *AppLogger, label string, total int) *ProgressTracker {
-	if logger == nil || logger.console == nil || !logger.quiet || total <= 0 {
+	if logger == nil || total <= 0 {
 		return nil
 	}
-	return &ProgressTracker{console: logger.console, enabled: true, label: label, total: total}
+	tracker := &ProgressTracker{
+		label:    label,
+		total:    total,
+		onUpdate: logger.progressCallback,
+	}
+	if logger.console != nil && logger.quiet {
+		tracker.console = logger.console
+		tracker.renderConsole = true
+	}
+	if !tracker.renderConsole && tracker.onUpdate == nil {
+		return nil
+	}
+	tracker.render(false)
+	return tracker
 }
 
 func (p *ProgressTracker) render(final bool) {
-	if p == nil || !p.enabled || p.console == nil {
+	if p == nil {
 		return
 	}
+	current := 0
+	total := 0
+	line := ""
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	barWidth := 24
@@ -368,7 +388,16 @@ func (p *ProgressTracker) render(final bool) {
 	if percent > 100 {
 		percent = 100
 	}
-	line := fmt.Sprintf("%s [%s] %d/%d (%d%%)", p.label, bar, p.current, p.total, percent)
+	line = fmt.Sprintf("%s [%s] %d/%d (%d%%)", p.label, bar, p.current, p.total, percent)
+	current = p.current
+	total = p.total
+
+	if p.onUpdate != nil {
+		p.onUpdate(p.label, current, total, final)
+	}
+	if p.console == nil || !p.renderConsole {
+		return
+	}
 	if final {
 		p.console.Println(line)
 		return
@@ -377,7 +406,7 @@ func (p *ProgressTracker) render(final bool) {
 }
 
 func (p *ProgressTracker) Advance() {
-	if p == nil || !p.enabled {
+	if p == nil {
 		return
 	}
 	p.mu.Lock()
@@ -387,7 +416,7 @@ func (p *ProgressTracker) Advance() {
 }
 
 func (p *ProgressTracker) Finish() {
-	if p == nil || !p.enabled {
+	if p == nil {
 		return
 	}
 	p.mu.Lock()
@@ -400,6 +429,9 @@ func (p *ProgressTracker) Finish() {
 
 func (l *AppLogger) log(level, message string) {
 	plain := fmt.Sprintf("%s %s", level, message)
+	if l.logCallback != nil {
+		l.logCallback(plain)
+	}
 	if l.file != nil {
 		l.file.Println(plain)
 	}
@@ -526,6 +558,8 @@ type statsWordCount struct {
 
 func main() {
 	configPath := flag.String("config", "config/config.toml", "Path to config file")
+	webMode := flag.Bool("web", false, "Start the local web UI instead of an interactive CLI workflow")
+	webPort := flag.Int("port", 8080, "Port to bind the local web UI when using -web")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
 	quietMode := flag.Bool("quiet", false, "Hide server request logs from terminal output while still writing all logs to the file")
 	trailMode := flag.Bool("trail", false, "Process as normal but do not write updates to Plex")
@@ -568,6 +602,9 @@ func main() {
 	importMode := *collImport
 	translateOnlyMode := *translateMode && !*cleanMode
 	modeCount := 0
+	if *webMode {
+		modeCount++
+	}
 	if *genPostersMode {
 		modeCount++
 	}
@@ -649,7 +686,16 @@ func main() {
 	defer closeLogger()
 
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
-	logger.Printf("config: no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	logger.Printf("config: web=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *webPort, *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	if *webMode {
+		if *webPort <= 0 || *webPort > 65535 {
+			logger.Fatalf("invalid flags: -port must be between 1 and 65535")
+		}
+		if err := startWebServer(*configPath, *webPort, logger); err != nil {
+			logger.Fatalf("web UI failed: %v", err)
+		}
+		return
+	}
 	if *backupMode {
 		if err := createBackupArchive(opsCfg, *configPath, logger); err != nil {
 			logger.Fatalf("backup failed: %v", err)
@@ -3183,6 +3229,9 @@ func saveSelectionMemory(sectionKeys []string) error {
 }
 
 func selectSingleSection(sections []plexSection) (plexSection, error) {
+	if len(sections) == 1 {
+		return sections[0], nil
+	}
 	selected, err := selectSections(sections)
 	if err != nil {
 		return plexSection{}, err

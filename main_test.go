@@ -52,6 +52,245 @@ func TestResolveCollectionTransferPathUsesOutputCollectionsExportForBareFilename
 	}
 }
 
+func TestSelectSingleSectionReturnsOnlySectionWithoutPrompt(t *testing.T) {
+	section := plexSection{Key: "7", Title: "Movies", Type: "movie"}
+	got, err := selectSingleSection([]plexSection{section})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got != section {
+		t.Fatalf("expected %+v got %+v", section, got)
+	}
+}
+
+func TestSaveWebPlexConfigWritesSupplementalPlexFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("output_dir = \"./output\"\nlog_file = \"./logs/frantic-postr.log\"\nplex_config = \"./config.plex.toml\"\n[plex]\nretries = 3\nworkers = 1\nretry_base_ms = 500\nretry_max_ms = 30000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := webConfigUpdateRequest{
+		BaseURL:     "http://plex.local:32400",
+		Token:       "secret-token",
+		Retries:     6,
+		Workers:     12,
+		RetryBaseMs: 250,
+		RetryMaxMs:  12000,
+		TemplateImage:            "../templates/template-general.png",
+		TypeTemplateImage:        "../templates/template-type.png",
+		StudioTemplateImage:      "../templates/template-studio.png",
+		AdminTemplateImage:       "../templates/template-admin.png",
+		TypeCollectionsFile:      "./types-collections.txt",
+		StudioCollectionsFile:    "./studio-collections.txt",
+		AdminCollectionsFile:     "./admin-collections.txt",
+		OutputDir:                "./custom-output",
+		LogFile:                  "./custom-logs/frantic-postr.log",
+		PlexConfigFile:           "./config.plex.toml",
+		LabelConfigFile:          "./labels.toml",
+		CollectionConfigFile:     "./collections.toml",
+		TranslateToEnglish:       true,
+		TranslateEndpoint:        "https://translate.local/translate",
+		TranslateAPIKey:          "translate-secret",
+		TranslateRateLimitMinute: 25,
+		CleanReplacements:        "& = and\nFULL MOVIE = ",
+		StatsExcludeWords:        "xxx, sample, 4k",
+		BackupRetentionDays:      14,
+		FontFile:                 "../fonts/Drips.ttf",
+		FontSize:                 120.5,
+		FontColor:                "#FFFFFF",
+		FontShadowColor:          "#000000",
+		FontShadowOffsetX:        2,
+		FontShadowOffsetY:        3,
+		FontGlowColor:            "#fbff00",
+		FontGlowRadius:           4,
+		FontGlowAlpha:            0.75,
+		FontYOffset:              9,
+	}
+	if err := saveWebConfig(configPath, request, nil); err != nil {
+		t.Fatalf("saveWebConfig failed: %v", err)
+	}
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected main config file: %v", err)
+	}
+	var mainCfg Config
+	if err := toml.Unmarshal(configBytes, &mainCfg); err != nil {
+		t.Fatalf("parse main config file: %v", err)
+	}
+	if mainCfg.OutputDir != request.OutputDir {
+		t.Fatalf("expected output dir %q got %q", request.OutputDir, mainCfg.OutputDir)
+	}
+	if mainCfg.LogFile != request.LogFile {
+		t.Fatalf("expected log file %q got %q", request.LogFile, mainCfg.LogFile)
+	}
+	if mainCfg.TemplateImage != request.TemplateImage || mainCfg.TypeTemplateImage != request.TypeTemplateImage {
+		t.Fatalf("expected template image fields to persist: %+v", mainCfg)
+	}
+	if mainCfg.PlexConfigFile != request.PlexConfigFile || mainCfg.LabelConfigFile != request.LabelConfigFile || mainCfg.CollectionConfigFile != request.CollectionConfigFile {
+		t.Fatalf("expected config file paths to persist: %+v", mainCfg)
+	}
+	if !mainCfg.Clean.TranslateToEnglish {
+		t.Fatal("expected translate_to_english to persist")
+	}
+	if mainCfg.Clean.TranslateEndpoint != request.TranslateEndpoint {
+		t.Fatalf("expected translate endpoint %q got %q", request.TranslateEndpoint, mainCfg.Clean.TranslateEndpoint)
+	}
+	if mainCfg.Clean.TranslateAPIKey != request.TranslateAPIKey {
+		t.Fatalf("expected translate API key %q got %q", request.TranslateAPIKey, mainCfg.Clean.TranslateAPIKey)
+	}
+	if mainCfg.Clean.TranslateRateLimitPerMinute != request.TranslateRateLimitMinute {
+		t.Fatalf("expected translate rate limit %d got %d", request.TranslateRateLimitMinute, mainCfg.Clean.TranslateRateLimitPerMinute)
+	}
+	if mainCfg.Clean.Replacements["&"] != "and" {
+		t.Fatalf("expected clean replacement to persist, got %+v", mainCfg.Clean.Replacements)
+	}
+	if len(mainCfg.Stats.ExcludeWords) != 3 {
+		t.Fatalf("expected stats exclude words to persist, got %+v", mainCfg.Stats.ExcludeWords)
+	}
+	if mainCfg.Backup.RetentionDays != request.BackupRetentionDays {
+		t.Fatalf("expected backup retention %d got %d", request.BackupRetentionDays, mainCfg.Backup.RetentionDays)
+	}
+	if mainCfg.Font.File != request.FontFile || mainCfg.Font.Size != request.FontSize || mainCfg.Font.GlowAlpha != request.FontGlowAlpha {
+		t.Fatalf("expected font settings to persist, got %+v", mainCfg.Font)
+	}
+	plexPath := filepath.Join(dir, "config.plex.toml")
+	bytes, err := os.ReadFile(plexPath)
+	if err != nil {
+		t.Fatalf("expected supplemental plex file: %v", err)
+	}
+	var cfg Config
+	if err := toml.Unmarshal(bytes, &cfg); err != nil {
+		t.Fatalf("parse supplemental plex file: %v", err)
+	}
+	if cfg.Plex.BaseURL != request.BaseURL {
+		t.Fatalf("expected base URL %q got %q", request.BaseURL, cfg.Plex.BaseURL)
+	}
+	if cfg.Plex.Token != request.Token {
+		t.Fatalf("expected token %q got %q", request.Token, cfg.Plex.Token)
+	}
+	if cfg.Plex.Retries != request.Retries || cfg.Plex.Workers != request.Workers {
+		t.Fatalf("unexpected retry/worker values: %+v", cfg.Plex)
+	}
+	if cfg.Plex.RetryBaseMs != request.RetryBaseMs || cfg.Plex.RetryMaxMs != request.RetryMaxMs {
+		t.Fatalf("unexpected retry timings: %+v", cfg.Plex)
+	}
+}
+
+func TestLoadWebRuntimeConfigMergesSupplementalPlexConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	plexPath := filepath.Join(dir, "config.plex.toml")
+	if err := os.WriteFile(configPath, []byte("output_dir = \"./output\"\nlog_file = \"./logs/frantic-postr.log\"\nplex_config = \"./config.plex.toml\"\n[plex]\nretries = 3\nworkers = 2\nretry_base_ms = 500\nretry_max_ms = 30000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plexPath, []byte("[plex]\nbase_url = \"http://plex.local:32400\"\ntoken = \"abc123\"\nretries = 6\nworkers = 9\nretry_base_ms = 250\nretry_max_ms = 12000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadWebRuntimeConfig(configPath, nil)
+	if err != nil {
+		t.Fatalf("loadWebRuntimeConfig failed: %v", err)
+	}
+	if cfg.Plex.BaseURL != "http://plex.local:32400" {
+		t.Fatalf("expected merged base URL, got %q", cfg.Plex.BaseURL)
+	}
+	if cfg.Plex.Token != "abc123" {
+		t.Fatalf("expected merged token, got %q", cfg.Plex.Token)
+	}
+	if cfg.Plex.Retries != 6 || cfg.Plex.Workers != 9 {
+		t.Fatalf("expected merged plex tuning, got %+v", cfg.Plex)
+	}
+	if cfg.PlexConfigFile != plexPath {
+		t.Fatalf("expected resolved plex config path %q got %q", plexPath, cfg.PlexConfigFile)
+	}
+}
+
+func TestLoadWebRuntimeConfigMergesSupplementalPlexConfigForRelativeConfigPath(t *testing.T) {
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWD)
+	}()
+
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("output_dir = \"../output\"\nlog_file = \"../logs/frantic-postr.log\"\nplex_config = \"./config.plex.toml\"\n[plex]\nretries = 3\nworkers = 2\nretry_base_ms = 500\nretry_max_ms = 30000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.plex.toml"), []byte("[plex]\nbase_url = \"http://plex.local:32400\"\ntoken = \"xyz789\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadWebRuntimeConfig(filepath.Join("config", "config.toml"), nil)
+	if err != nil {
+		t.Fatalf("loadWebRuntimeConfig failed: %v", err)
+	}
+	if cfg.Plex.BaseURL != "http://plex.local:32400" {
+		t.Fatalf("expected merged base URL, got %q", cfg.Plex.BaseURL)
+	}
+	if cfg.Plex.Token != "xyz789" {
+		t.Fatalf("expected merged token, got %q", cfg.Plex.Token)
+	}
+	if cfg.PlexConfigFile != filepath.Join("config", "config.plex.toml") {
+		t.Fatalf("expected relative resolved plex config path, got %q", cfg.PlexConfigFile)
+	}
+}
+
+func TestLoadWebDisplayConfigPreservesRawConfigPaths(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "config.toml")
+	plexPath := filepath.Join(configDir, "plex.toml")
+	if err := os.WriteFile(configPath, []byte("template_image = \"../templates/template-general.png\"\noutput_dir = \"../output\"\nlog_file = \"../logs/frantic-postr.log\"\nplex_config = \"./plex.toml\"\n[plex]\nretries = 6\nworkers = 10\nretry_base_ms = 500\nretry_max_ms = 50000\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plexPath, []byte("[plex]\nbase_url = \"http://plex.local:32400\"\ntoken = \"token123\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadWebDisplayConfig(configPath, nil)
+	if err != nil {
+		t.Fatalf("loadWebDisplayConfig failed: %v", err)
+	}
+	if cfg.TemplateImage != "../templates/template-general.png" {
+		t.Fatalf("expected raw template path, got %q", cfg.TemplateImage)
+	}
+	if cfg.OutputDir != "../output" {
+		t.Fatalf("expected raw output dir, got %q", cfg.OutputDir)
+	}
+	if cfg.LogFile != "../logs/frantic-postr.log" {
+		t.Fatalf("expected raw log file, got %q", cfg.LogFile)
+	}
+	if cfg.PlexConfigFile != "./plex.toml" {
+		t.Fatalf("expected raw plex config path, got %q", cfg.PlexConfigFile)
+	}
+	if cfg.Plex.BaseURL != "http://plex.local:32400" || cfg.Plex.Token != "token123" {
+		t.Fatalf("expected merged plex values, got %+v", cfg.Plex)
+	}
+}
+
+func TestValidateWebPlexConnectionRequestRequiresToken(t *testing.T) {
+	err := validateWebPlexConnectionRequest(webConfigUpdateRequest{
+		BaseURL:     "http://plex.local:32400",
+		Retries:     3,
+		Workers:     1,
+		RetryBaseMs: 500,
+		RetryMaxMs:  30000,
+	})
+	if err == nil {
+		t.Fatal("expected missing token validation error")
+	}
+}
+
 func TestResolveCollectionTransferPathKeepsExplicitDirectory(t *testing.T) {
 	cfg := Config{OutputDir: "/tmp/output"}
 	got := resolveCollectionTransferPath(cfg, "custom/collections-export.json")

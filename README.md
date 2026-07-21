@@ -16,6 +16,25 @@ go run . -config config/config.toml -gen-posters
 
 Running the app without a mode flag prints the help text instead of starting a workflow.
 
+To start the local UIKit-based web UI on port `8080`:
+
+```bash
+go run . -config config/config.toml -web -port 8080
+```
+
+If you omit `-config`, the app uses `config/config.toml` by default:
+
+```bash
+go run . -web -port 8080
+```
+
+Web UI notes:
+
+- The server binds to `127.0.0.1` only.
+- The dashboard exposes the major workflows: poster generation, title cleaning, translation, labels, collection export/import/inject, duplicate audits, non-smart deletion, path-clean, clone, backup, restore, and rollback.
+- Use the configuration card to edit Plex settings and the exposed runtime config fields; saves are written back to the active TOML config files.
+- A built-in help page is available at `/help`, and the dashboard includes an About dialog with version and runtime details.
+
 `config/config.plex.toml` is intended to stay local and is ignored by git.
 
 Library selection memory:
