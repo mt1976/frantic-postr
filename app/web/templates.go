@@ -382,7 +382,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
         <div class="fp-summary-grid" style="min-width: min(100%, 380px); max-width: 420px;">
           <div class="fp-stat">
             <span class="fp-kicker">Listening</span>
-            <strong>127.0.0.1:{{.Port}}</strong>
+						<strong>0.0.0.0:{{.Port}}</strong>
           </div>
           <div class="fp-stat">
             <span class="fp-kicker">Started</span>

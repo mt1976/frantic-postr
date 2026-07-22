@@ -30,9 +30,10 @@ func startWebServer(configPath string, port int, logger *AppLogger) error {
 		logger:     logger,
 		startedAt:  time.Now(),
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	logger.Successf("web UI available at http://%s", addr)
-	logger.Infof("web help available at http://%s/help", addr)
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	logger.Successf("web UI available at http://127.0.0.1:%d (local)", port)
+	logger.Successf("web UI available at http://<this-machine-ip>:%d (LAN)", port)
+	logger.Infof("web help available at http://127.0.0.1:%d/help", port)
 	return http.ListenAndServe(addr, server.routes())
 }
 
