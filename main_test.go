@@ -24,14 +24,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mt1976/frantic-postr/app/core"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/image/font/basicfont"
 )
 
 func newTestLogger(console, file io.Writer) *AppLogger {
 	return &AppLogger{
-		console: log.New(console, "", 0),
-		file:    log.New(file, "", 0),
+		Console: log.New(console, "", 0),
+		File:    log.New(file, "", 0),
 	}
 }
 
@@ -70,12 +71,12 @@ func TestSaveWebPlexConfigWritesSupplementalPlexFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := webConfigUpdateRequest{
-		BaseURL:     "http://plex.local:32400",
-		Token:       "secret-token",
-		Retries:     6,
-		Workers:     12,
-		RetryBaseMs: 250,
-		RetryMaxMs:  12000,
+		BaseURL:                  "http://plex.local:32400",
+		Token:                    "secret-token",
+		Retries:                  6,
+		Workers:                  12,
+		RetryBaseMs:              250,
+		RetryMaxMs:               12000,
 		TemplateImage:            "../templates/template-general.png",
 		TypeTemplateImage:        "../templates/template-type.png",
 		StudioTemplateImage:      "../templates/template-studio.png",
@@ -111,11 +112,11 @@ func TestSaveWebPlexConfigWritesSupplementalPlexFile(t *testing.T) {
 	}
 	configBytes, err := os.ReadFile(configPath)
 	if err != nil {
-		t.Fatalf("expected main config file: %v", err)
+		t.Fatalf("expected main config File: %v", err)
 	}
 	var mainCfg Config
 	if err := toml.Unmarshal(configBytes, &mainCfg); err != nil {
-		t.Fatalf("parse main config file: %v", err)
+		t.Fatalf("parse main config File: %v", err)
 	}
 	if mainCfg.OutputDir != request.OutputDir {
 		t.Fatalf("expected output dir %q got %q", request.OutputDir, mainCfg.OutputDir)
@@ -156,11 +157,11 @@ func TestSaveWebPlexConfigWritesSupplementalPlexFile(t *testing.T) {
 	plexPath := filepath.Join(dir, "config.plex.toml")
 	bytes, err := os.ReadFile(plexPath)
 	if err != nil {
-		t.Fatalf("expected supplemental plex file: %v", err)
+		t.Fatalf("expected supplemental plex File: %v", err)
 	}
 	var cfg Config
 	if err := toml.Unmarshal(bytes, &cfg); err != nil {
-		t.Fatalf("parse supplemental plex file: %v", err)
+		t.Fatalf("parse supplemental plex File: %v", err)
 	}
 	if cfg.Plex.BaseURL != request.BaseURL {
 		t.Fatalf("expected base URL %q got %q", request.BaseURL, cfg.Plex.BaseURL)
@@ -320,6 +321,56 @@ func TestResolveCollectionExportPathDoesNotDoubleAppendDate(t *testing.T) {
 	}
 }
 
+func TestResolveCollectionExportPathForLibraryAddsLibraryName(t *testing.T) {
+	now := time.Date(2026, time.June, 22, 10, 0, 0, 0, time.UTC)
+	base := filepath.Join("/tmp/output", "collections-export", "collections-export_20260622.json")
+	got := resolveCollectionExportPathForLibrary(base, "Porn - General", now)
+	expected := filepath.Join("/tmp/output", "collections-export", "collections-export_Porn - General_20260622.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestResolveCollectionExportPathForLibraryAvoidsDuplicateLibraryToken(t *testing.T) {
+	now := time.Date(2026, time.June, 22, 10, 0, 0, 0, time.UTC)
+	base := filepath.Join("/tmp/output", "collections-export", "collections-export_Porn - General_20260622.json")
+	got := resolveCollectionExportPathForLibrary(base, "Porn - General", now)
+	expected := filepath.Join("/tmp/output", "collections-export", "collections-export_Porn - General_20260622.json")
+	if got != expected {
+		t.Fatalf("expected %q got %q", expected, got)
+	}
+}
+
+func TestLibraryScopedReportPathsIncludeLibraryName(t *testing.T) {
+	now := time.Date(2026, time.June, 22, 10, 0, 0, 0, time.UTC)
+	library := "Porn - General"
+
+	cleanPath := uniqueCleanReportPathForLibrary("output", library, now)
+	if cleanPath != filepath.Join("output", "clean", "clean-Porn - General-20260622-100000.csv") {
+		t.Fatalf("unexpected clean path: %q", cleanPath)
+	}
+
+	labelPath := uniqueLabelReportPathForLibrary("output", library, now)
+	if labelPath != filepath.Join("output", "labels", "labels-Porn - General-20260622-100000.csv") {
+		t.Fatalf("unexpected label path: %q", labelPath)
+	}
+
+	statsPath := uniqueStatsReportPathForLibrary("output", library, now)
+	if statsPath != filepath.Join("output", "stats", "word-frequency-Porn - General-20260622-100000.csv") {
+		t.Fatalf("unexpected stats path: %q", statsPath)
+	}
+
+	dupesPath := uniqueCollectionReportPathForLibrary("output", "duplicate-collections", library, now)
+	if dupesPath != filepath.Join("output", "collections", "duplicate-collections-Porn - General-20260622-100000.csv") {
+		t.Fatalf("unexpected dupes path: %q", dupesPath)
+	}
+
+	pathCleanPath := uniquePathCleanReportPathForLibrary("output", library, now)
+	if pathCleanPath != filepath.Join("output", "path-clean", "path-clean-Porn - General-20260622-100000.csv") {
+		t.Fatalf("unexpected path clean path: %q", pathCleanPath)
+	}
+}
+
 func TestTokenizeStatsWords(t *testing.T) {
 	got := tokenizeStatsWords("The.Big-Brown_Fox+1080p 123")
 	expected := []string{"the", "big", "brown", "fox", "1080p"}
@@ -388,12 +439,12 @@ func TestNormalizeCollectionMatchKey(t *testing.T) {
 
 func TestSelectPosterTemplateUsesCaseAndSpaceInsensitiveMatching(t *testing.T) {
 	cfg := Config{
-		TemplateImage:      "default.png",
-		TypeTemplateImage:  "type.png",
+		TemplateImage:       "default.png",
+		TypeTemplateImage:   "type.png",
 		StudioTemplateImage: "studio.png",
-		AdminTemplateImage: "admin.png",
+		AdminTemplateImage:  "admin.png",
 		TypeCollectionSet: map[string]struct{}{
-			"mytypecollection": {},
+			"mytypecollection":  {},
 			"myclashcollection": {},
 		},
 		StudioCollectionSet: map[string]struct{}{
@@ -555,9 +606,9 @@ func TestQuietLoggerSuppressesAPIOutputOnConsole(t *testing.T) {
 	var console bytes.Buffer
 	var file bytes.Buffer
 	logger := &AppLogger{
-		console: log.New(&console, "", 0),
-		file:    log.New(&file, "", 0),
-		quiet:   true,
+		Console: log.New(&console, "", 0),
+		File:    log.New(&file, "", 0),
+		Quiet:   true,
 	}
 
 	logger.Infof("progress message")
@@ -587,7 +638,7 @@ func TestQuietLoggerSuppressesAPIOutputOnConsole(t *testing.T) {
 
 func TestQuietProgressTrackerRendersToConsole(t *testing.T) {
 	var console bytes.Buffer
-	logger := &AppLogger{console: log.New(&console, "", 0), quiet: true}
+	logger := &AppLogger{Console: log.New(&console, "", 0), Quiet: true}
 	progress := newProgressTracker(logger, "gen posters", 3)
 	if progress == nil {
 		t.Fatal("expected progress tracker in quiet mode")
@@ -667,6 +718,48 @@ func TestFetchCollectionsReturnsTitlesAndGUIDs(t *testing.T) {
 	}
 	if collections[1].Title != "RuggerLad69" || collections[1].GUID != "collection://9c80b1ca-358f-4068-864d-d57e420ab705" {
 		t.Fatalf("unexpected second collection: %+v", collections[1])
+	}
+}
+
+func TestCollectionLikelyHasDedicatedPoster(t *testing.T) {
+	tests := []struct {
+		name      string
+		thumb     string
+		dedicated bool
+	}{
+		{name: "empty thumb treated as missing", thumb: "", dedicated: false},
+		{name: "collection endpoint composite thumb treated as missing", thumb: "/library/collections/357900/composite/1722939483?X-Plex-Token=abc", dedicated: false},
+		{name: "metadata asset thumb treated as dedicated", thumb: "/library/metadata/357900/thumb/1722939483", dedicated: true},
+		{name: "explicit composite marker treated as missing", thumb: "/library/metadata/357900/thumb/1722939483?composite=true", dedicated: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			collection := plexCollection{Thumb: tt.thumb}
+			got := collectionLikelyHasDedicatedPoster(collection)
+			if got != tt.dedicated {
+				t.Fatalf("thumb=%q dedicated=%t got=%t", tt.thumb, tt.dedicated, got)
+			}
+		})
+	}
+}
+
+func TestFilterCollectionsLikelyMissingDedicatedPoster(t *testing.T) {
+	collections := []plexCollection{
+		{Title: "Needs Poster", Thumb: "/library/collections/100/composite/1"},
+		{Title: "Has Poster", Thumb: "/library/metadata/101/thumb/2"},
+		{Title: "No Thumb", Thumb: ""},
+	}
+
+	filtered := filterCollectionsLikelyMissingDedicatedPoster(collections)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered collections, got %d", len(filtered))
+	}
+	if filtered[0].Title != "Needs Poster" {
+		t.Fatalf("unexpected first filtered collection: %+v", filtered[0])
+	}
+	if filtered[1].Title != "No Thumb" {
+		t.Fatalf("unexpected second filtered collection: %+v", filtered[1])
 	}
 }
 
@@ -1021,7 +1114,7 @@ func TestUploadCollectionPoster(t *testing.T) {
 	dir := t.TempDir()
 	imagePath := filepath.Join(dir, "poster.png")
 	if err := os.WriteFile(imagePath, []byte("image-data"), 0o644); err != nil {
-		t.Fatalf("failed to create image file: %v", err)
+		t.Fatalf("failed to create image File: %v", err)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1808,7 +1901,7 @@ func TestApplyRestoredFileMergesTOMLAndCapturesRollback(t *testing.T) {
 	}
 	before := []byte("template_image = \"old.png\"\n[plex]\nworkers = 3\n")
 	if err := os.WriteFile(dest, before, 0o644); err != nil {
-		t.Fatalf("failed to write destination file: %v", err)
+		t.Fatalf("failed to write destination File: %v", err)
 	}
 
 	rollbackZipPath := filepath.Join(dir, "rollback.zip")
@@ -1829,7 +1922,7 @@ func TestApplyRestoredFileMergesTOMLAndCapturesRollback(t *testing.T) {
 		t.Fatalf("failed to close rollback zip writer: %v", err)
 	}
 	if err := f.Close(); err != nil {
-		t.Fatalf("failed to close rollback zip file: %v", err)
+		t.Fatalf("failed to close rollback zip File: %v", err)
 	}
 
 	if action != "merged" || !changed {
@@ -1890,7 +1983,7 @@ func TestApplyRestoredFileDryRunDoesNotWrite(t *testing.T) {
 	}
 	before := []byte("[plex]\nworkers = 4\n")
 	if err := os.WriteFile(dest, before, 0o644); err != nil {
-		t.Fatalf("failed writing file: %v", err)
+		t.Fatalf("failed writing File: %v", err)
 	}
 	backup := []byte("[plex]\nworkers = 12\n")
 
@@ -2107,13 +2200,13 @@ func TestHasClearNonEnglishMarkers(t *testing.T) {
 }
 
 func TestShouldSkipPlexWrite(t *testing.T) {
-	trailModeEnabled = false
+	core.TrailModeEnabled = false
 	if shouldSkipPlexWrite(newTestLogger(io.Discard, io.Discard), "op", "http://localhost") {
 		t.Fatal("expected no skip when trail mode disabled")
 	}
-	trailModeEnabled = true
+	core.TrailModeEnabled = true
 	if !shouldSkipPlexWrite(newTestLogger(io.Discard, io.Discard), "op", "http://localhost") {
 		t.Fatal("expected skip when trail mode enabled")
 	}
-	trailModeEnabled = false
+	core.TrailModeEnabled = false
 }

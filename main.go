@@ -2,10 +2,8 @@ package main
 
 import (
 	"archive/zip"
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -27,7 +25,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -39,6 +36,9 @@ import (
 
 	"github.com/abadojack/whatlanggo"
 	fcolor "github.com/fatih/color"
+	"github.com/mt1976/frantic-postr/app/core"
+	"github.com/mt1976/frantic-postr/app/reports"
+	"github.com/mt1976/frantic-postr/app/web"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
@@ -46,130 +46,44 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-type Config struct {
-	Plex struct {
-		BaseURL     string `toml:"base_url"`
-		Token       string `toml:"token"`
-		Retries     int    `toml:"retries"`
-		Workers     int    `toml:"workers"`
-		RetryBaseMs int    `toml:"retry_base_ms"`
-		RetryMaxMs  int    `toml:"retry_max_ms"`
-	} `toml:"plex"`
-	Label struct {
-		Lookups []labelLookupConfig `toml:"lookup"`
-	} `toml:"label"`
-	Collection struct {
-		Lookups []collectionLookupConfig `toml:"lookup"`
-	} `toml:"collection"`
-	Clean struct {
-		Replacements                map[string]string `toml:"replacements"`
-		TranslateToEnglish          bool              `toml:"translate_to_english"`
-		TranslateEndpoint           string            `toml:"translate_endpoint"`
-		TranslateAPIHTTPAddress     string            `toml:"translate_api_http_address"`
-		TranslateAPIKey             string            `toml:"translate_api_key"`
-		TranslateRateLimitPerMinute int               `toml:"translate_rate_limit_per_minute"`
-	} `toml:"clean"`
-	Stats struct {
-		ExcludeWords []string `toml:"exclude_words"`
-	} `toml:"stats"`
-	Backup struct {
-		RetentionDays int `toml:"retention_days"`
-	} `toml:"backup"`
-	TemplateImage         string              `toml:"template_image"`
-	TypeTemplateImage     string              `toml:"type_template_image"`
-	StudioTemplateImage   string              `toml:"studio_template_image"`
-	AdminTemplateImage    string              `toml:"admin_template_image"`
-	TypeCollectionsFile   string              `toml:"type_collections_file"`
-	StudioCollectionsFile string              `toml:"studio_collections_file"`
-	AdminCollectionsFile  string              `toml:"admin_collections_file"`
-	OutputDir             string              `toml:"output_dir"`
-	LogFile               string              `toml:"log_file"`
-	PlexConfigFile        string              `toml:"plex_config"`
-	LabelConfigFile       string              `toml:"label_config"`
-	CollectionConfigFile  string              `toml:"collection_config"`
-	CollectionBaseURI     string              `toml:"-"`
-	TypeCollectionSet     map[string]struct{} `toml:"-"`
-	StudioCollectionSet   map[string]struct{} `toml:"-"`
-	AdminCollectionSet    map[string]struct{} `toml:"-"`
-	Font                  struct {
-		File          string  `toml:"file"`
-		Size          float64 `toml:"size"`
-		Color         string  `toml:"color"`
-		ShadowColor   string  `toml:"shadow_color"`
-		ShadowOffsetX int     `toml:"shadow_offset_x"`
-		ShadowOffsetY int     `toml:"shadow_offset_y"`
-		GlowColor     string  `toml:"glow_color"`
-		GlowRadius    int     `toml:"glow_radius"`
-		GlowAlpha     float64 `toml:"glow_alpha"`
-		YOffset       int     `toml:"y_offset"`
-	} `toml:"font"`
-}
-
-type plexSectionsResponse struct {
-	Directories []plexSection `xml:"Directory"`
-}
-
-type plexCollectionsResponse struct {
-	Directories []plexCollection `xml:"Directory"`
-}
-
-type plexSectionAllResponse struct {
-	Size     int               `xml:"size,attr"`
-	Metadata []plexLibraryItem `xml:"Metadata"`
-	Videos   []plexLibraryItem `xml:"Video"`
-}
-
-type plexCollectionDetailResponse struct {
-	Directories []struct {
-		RatingKey string `xml:"ratingKey,attr"`
-		Title     string `xml:"title,attr"`
-		GUID      string `xml:"guid,attr"`
-		Subtype   string `xml:"subtype,attr"`
-		Smart     int    `xml:"smart,attr"`
-		Content   string `xml:"content,attr"`
-	} `xml:"Directory"`
-}
-
-type plexSectionDetailResponse struct {
-	Directories []plexSectionDetail `xml:"Directory"`
-}
-
-type plexSectionDetail struct {
-	Key       string                `xml:"key,attr"`
-	Title     string                `xml:"title,attr"`
-	Type      string                `xml:"type,attr"`
-	Agent     string                `xml:"agent,attr"`
-	Scanner   string                `xml:"scanner,attr"`
-	Language  string                `xml:"language,attr"`
-	Locations []plexSectionLocation `xml:"Location"`
-}
-
-type plexSectionLocation struct {
-	Path string `xml:"path,attr"`
-}
-
-type plexSectionPrefsResponse struct {
-	Settings []plexSectionPref `xml:"Setting"`
-}
-
-type plexSectionPref struct {
-	ID    string `xml:"id,attr"`
-	Value string `xml:"value,attr"`
-}
-
-type plexSection struct {
-	Key   string `xml:"key,attr" json:"key"`
-	Title string `xml:"title,attr" json:"title"`
-	Type  string `xml:"type,attr" json:"type"`
-}
-
-type cleanReportRow struct {
-	RatingKey       string
-	TitleBefore     string
-	TitleAfter      string
-	SortTitleBefore string
-	SortTitleAfter  string
-}
+type Config = core.Config
+type plexSectionsResponse = core.PlexSectionsResponse
+type plexCollectionsResponse = core.PlexCollectionsResponse
+type plexSectionAllResponse = core.PlexSectionAllResponse
+type plexCollectionDetailResponse = core.PlexCollectionDetailResponse
+type plexSectionDetailResponse = core.PlexSectionDetailResponse
+type plexSectionDetail = core.PlexSectionDetail
+type plexSectionLocation = core.PlexSectionLocation
+type plexSectionPrefsResponse = core.PlexSectionPrefsResponse
+type plexSectionPref = core.PlexSectionPref
+type plexSection = core.PlexSection
+type cleanReportRow = core.CleanReportRow
+type labelReportRow = core.LabelReportRow
+type plexCollection = core.PlexCollection
+type plexLibraryItem = core.PlexLibraryItem
+type plexMedia = core.PlexMedia
+type plexPart = core.PlexPart
+type plexLabel = core.PlexLabel
+type LabelConfig = core.LabelConfig
+type CollectionConfig = core.CollectionConfig
+type labelLookupConfig = core.LabelLookupConfig
+type collectionLookupConfig = core.CollectionLookupConfig
+type selectionMemory = core.SelectionMemory
+type backupCandidate = core.BackupCandidate
+type restoreLogRow = core.RestoreLogRow
+type rollbackManifestEntry = core.RollbackManifestEntry
+type rollbackManifest = core.RollbackManifest
+type lastRestoreState = core.LastRestoreState
+type AppLogger = core.AppLogger
+type ProgressTracker = core.ProgressTracker
+type collectionTransferFile = core.CollectionTransferFile
+type collectionTransferRecord = core.CollectionTransferRecord
+type collectionInventoryEntry = core.CollectionInventoryEntry
+type collectionDuplicateRow = core.CollectionDuplicateRow
+type collectionDeleteRow = core.CollectionDeleteRow
+type pathCleanReportRow = core.PathCleanReportRow
+type statsWordCount = core.StatsWordCount
+type webConfigUpdateRequest = web.WebConfigUpdateRequest
 
 type cleanItemResult struct {
 	ratingKey       string
@@ -189,371 +103,183 @@ type labelItemResult struct {
 	categoriesUpdated bool
 	skipped           bool
 	err               error
-	// before/after snapshots for the report
-	labelsBefore     string
-	labelsAfter      string
-	categoriesBefore string
-	categoriesAfter  string
-}
-
-type labelReportRow struct {
-	RatingKey        string
-	Title            string
-	LabelsBefore     string
-	LabelsAfter      string
-	CategoriesBefore string
-	CategoriesAfter  string
-}
-
-type plexCollection struct {
-	RatingKey string `xml:"ratingKey,attr"`
-	Title     string `xml:"title,attr"`
-	GUID      string `xml:"guid,attr"`
-}
-
-type plexLibraryItem struct {
-	RatingKey     string      `xml:"ratingKey,attr"`
-	Title         string      `xml:"title,attr"`
-	SortTitle     string      `xml:"titleSort,attr"`
-	OriginalTitle string      `xml:"originalTitle,attr"`
-	Labels        []plexLabel `xml:"Label"`
-	Genres        []plexLabel `xml:"Genre"`
-	Media         []plexMedia `xml:"Media"`
-}
-
-type plexMedia struct {
-	Parts []plexPart `xml:"Part"`
-}
-
-type plexPart struct {
-	File string `xml:"file,attr"`
-}
-
-type plexLabel struct {
-	Tag string `xml:"tag,attr"`
-}
-
-type LabelConfig struct {
-	Label struct {
-		Lookups []labelLookupConfig `toml:"lookup"`
-	} `toml:"label"`
-}
-
-type CollectionConfig struct {
-	BaseURI    string `toml:"base_uri"`
-	Collection struct {
-		Lookups []collectionLookupConfig `toml:"lookup"`
-	} `toml:"collection"`
-}
-
-type labelLookupConfig struct {
-	TitleContains    string   `toml:"title_contains"`
-	TitleContainsAny []string `toml:"title_contains_any"`
-	Find             string   `toml:"find"`
-	Labels           []string `toml:"labels"`
-	Categories       []string `toml:"categories"`
-	UpdateCategory   bool     `toml:"update_category"`
-	OnlyCategory     bool     `toml:"only_category"`
-}
-
-type collectionLookupConfig struct {
-	Title   string `toml:"title"`
-	Smart   bool   `toml:"smart"`
-	Content string `toml:"content"`
-}
-
-type selectionMemory struct {
-	SectionKeys []string `json:"section_keys"`
-}
-
-type backupCandidate struct {
-	Name    string
-	Path    string
-	ModTime time.Time
-	Host    string
-}
-
-type restoreLogRow struct {
-	Path   string
-	Action string
-	Detail string
-}
-
-type rollbackManifestEntry struct {
-	Path         string `json:"path"`
-	ExistedPrior bool   `json:"existed_prior"`
-}
-
-type rollbackManifest struct {
-	RestoreTimestamp string                  `json:"restore_timestamp"`
-	Entries          []rollbackManifestEntry `json:"entries"`
-}
-
-type lastRestoreState struct {
-	RestoreTimestamp string `json:"restore_timestamp"`
-	BackupArchive    string `json:"backup_archive"`
-	RollbackZip      string `json:"rollback_zip"`
-	ManifestFile     string `json:"manifest_file"`
-	RolledBack       bool   `json:"rolled_back"`
+	labelsBefore      string
+	labelsAfter       string
+	categoriesBefore  string
+	categoriesAfter   string
 }
 
 const (
-	selectionMemoryFile       = ".frantic-postr-selection.json"
-	collectionTransferDirName = "collections-export"
-	backupDirName             = "backups"
-	restoreLogDirName         = "restore"
-	lastRestoreStateFileName  = "last-restore-state.json"
+	selectionMemoryFile       = core.SelectionMemoryFile
+	collectionTransferDirName = core.CollectionTransferDirName
+	backupDirName             = core.BackupDirName
+	restoreLogDirName         = core.RestoreLogDirName
+	lastRestoreStateFileName  = core.LastRestoreStateFileName
+	appDisplayName            = core.AppDisplayName
 )
 
 var (
-	colorOutputEnabled     = true
-	trailModeEnabled       = false
-	translateRateLimitMu   sync.Mutex
-	nextTranslateRequestAt time.Time
-	stdinReader            = bufio.NewReader(os.Stdin)
-	promptScreenModeLabel  = "Interactive"
+	videoExtRe             = core.VideoExtRe
+	collectionSectionKeyRe = core.CollectionSectionKeyRe
 )
 
-const appDisplayName = "frantic-postr"
-
-// videoExtRe matches a dot-prefixed video container extension, case-insensitively.
-var videoExtRe = regexp.MustCompile(`(?i)\.(mp4|mov|mpg|mpeg|mkv|avi|wmv|flv|webm|m4v|3gp|ts|vob|rm|rmvb|f4v|divx|xvid)\b`)
-
-var collectionSectionKeyRe = regexp.MustCompile(`(?:/library/sections/|%2Flibrary%2Fsections%2F|%2flibrary%2fsections%2f)([0-9]+)(?:/|%2F|%2f)`)
-
-type AppLogger struct {
-	console *log.Logger
-	file    *log.Logger
-	quiet   bool
-	logCallback      func(line string)
-	progressCallback func(label string, current, total int, final bool)
-}
-
-type ProgressTracker struct {
-	console *log.Logger
-	renderConsole bool
-	onUpdate      func(label string, current, total int, final bool)
-	label   string
-	total   int
-	current int
-	mu      sync.Mutex
-}
-
+func setRequestContext(ctx context.Context) func() { return core.SetRequestContext(ctx) }
+func currentRequestContext() context.Context       { return core.CurrentRequestContext() }
 func newProgressTracker(logger *AppLogger, label string, total int) *ProgressTracker {
-	if logger == nil || total <= 0 {
-		return nil
-	}
-	tracker := &ProgressTracker{
-		label:    label,
-		total:    total,
-		onUpdate: logger.progressCallback,
-	}
-	if logger.console != nil && logger.quiet {
-		tracker.console = logger.console
-		tracker.renderConsole = true
-	}
-	if !tracker.renderConsole && tracker.onUpdate == nil {
-		return nil
-	}
-	tracker.render(false)
-	return tracker
+	return core.NewProgressTracker(logger, label, total)
 }
 
-func (p *ProgressTracker) render(final bool) {
-	if p == nil {
-		return
-	}
-	current := 0
-	total := 0
-	line := ""
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	barWidth := 24
-	if p.total <= 0 {
-		return
-	}
-	if p.current > p.total {
-		p.current = p.total
-	}
-	filled := (p.current * barWidth) / p.total
-	if filled < 0 {
-		filled = 0
-	}
-	if filled > barWidth {
-		filled = barWidth
-	}
-	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
-	percent := (p.current * 100) / p.total
-	if percent > 100 {
-		percent = 100
-	}
-	line = fmt.Sprintf("%s [%s] %d/%d (%d%%)", p.label, bar, p.current, p.total, percent)
-	current = p.current
-	total = p.total
-
-	if p.onUpdate != nil {
-		p.onUpdate(p.label, current, total, final)
-	}
-	if p.console == nil || !p.renderConsole {
-		return
-	}
-	if final {
-		p.console.Println(line)
-		return
-	}
-	p.console.Printf("\r%s", line)
+func setupLogger(path string) (*AppLogger, func(), error) {
+	return reports.SetupLogger(path)
+}
+func uniqueCleanReportPath(outputDir string, now time.Time) string {
+	return reports.UniqueCleanReportPath(outputDir, now)
+}
+func uniqueLabelReportPath(outputDir string, now time.Time) string {
+	return reports.UniqueLabelReportPath(outputDir, now)
+}
+func writeLabelReport(path string, rows []labelReportRow) error {
+	return reports.WriteLabelReport(path, rows)
+}
+func writeCleanReport(path string, rows []cleanReportRow) error {
+	return reports.WriteCleanReport(path, rows)
+}
+func writeCSVReport(path string, header []string, rows [][]string) error {
+	return reports.WriteCSVReport(path, header, rows)
+}
+func uniqueCollectionReportPath(outputDir, prefix string, now time.Time) string {
+	return reports.UniqueCollectionReportPath(outputDir, prefix, now)
+}
+func uniqueCollectionReportPathForLibrary(outputDir, prefix, libraryName string, now time.Time) string {
+	return reports.UniqueCollectionReportPathForLibrary(outputDir, prefix, libraryName, now)
+}
+func uniquePathCleanReportPath(outputDir string, now time.Time) string {
+	return reports.UniquePathCleanReportPath(outputDir, now)
+}
+func uniquePathCleanReportPathForLibrary(outputDir, libraryName string, now time.Time) string {
+	return reports.UniquePathCleanReportPathForLibrary(outputDir, libraryName, now)
+}
+func uniquePosterReportPath(outputDir string, now time.Time) string {
+	return reports.UniquePosterReportPath(outputDir, now)
+}
+func uniqueStatsReportPath(outputDir string, now time.Time) string {
+	return reports.UniqueStatsReportPath(outputDir, now)
+}
+func uniqueStatsReportPathForLibrary(outputDir, libraryName string, now time.Time) string {
+	return reports.UniqueStatsReportPathForLibrary(outputDir, libraryName, now)
+}
+func uniqueCleanReportPathForLibrary(outputDir, libraryName string, now time.Time) string {
+	return reports.UniqueCleanReportPathForLibrary(outputDir, libraryName, now)
+}
+func uniqueLabelReportPathForLibrary(outputDir, libraryName string, now time.Time) string {
+	return reports.UniqueLabelReportPathForLibrary(outputDir, libraryName, now)
+}
+func uniqueRunLogPath(path string, now time.Time) string {
+	return reports.UniqueRunLogPath(path, now)
 }
 
-func (p *ProgressTracker) Advance() {
-	if p == nil {
-		return
-	}
-	p.mu.Lock()
-	p.current++
-	p.mu.Unlock()
-	p.render(false)
+func startWebServer(configPath string, port int, logger *AppLogger) error {
+	return web.StartWebServer(configPath, port, logger)
+}
+func saveWebConfig(configPath string, request webConfigUpdateRequest, logger *AppLogger) error {
+	return web.SaveWebConfig(configPath, request, logger)
+}
+func loadWebRuntimeConfig(path string, logger *AppLogger) (Config, error) {
+	return web.LoadWebRuntimeConfig(path, logger)
+}
+func loadWebDisplayConfig(path string, logger *AppLogger) (Config, error) {
+	return web.LoadWebDisplayConfig(path, logger)
+}
+func validateWebPlexConnectionRequest(request webConfigUpdateRequest) error {
+	return web.ValidateWebPlexConnectionRequest(request)
 }
 
-func (p *ProgressTracker) Finish() {
-	if p == nil {
-		return
-	}
-	p.mu.Lock()
-	if p.current < p.total {
-		p.current = p.total
-	}
-	p.mu.Unlock()
-	p.render(true)
+func runPosterGeneration(client *http.Client, cfg Config, selectedSections []plexSection, uploadPosters bool, labelTypeCollectionItems bool, missingPostersOnly bool, logger *AppLogger) error {
+	return web.RunPosterGeneration(client, cfg, selectedSections, uploadPosters, labelTypeCollectionItems, missingPostersOnly, logger)
 }
 
-func (l *AppLogger) log(level, message string) {
-	plain := fmt.Sprintf("%s %s", level, message)
-	if l.logCallback != nil {
-		l.logCallback(plain)
-	}
-	if l.file != nil {
-		l.file.Println(plain)
-	}
-	if l.console != nil && (!l.quiet || level == "SUCCESS" || level == "WARNING" || level == "ERROR") {
-		l.console.Printf("%s %s", colorizeLevel(level), message)
-	}
-}
-
-func (l *AppLogger) Printf(format string, args ...any) {
-	l.log("INFO", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Println(args ...any) {
-	l.log("INFO", strings.TrimSpace(fmt.Sprintln(args...)))
-}
-
-func (l *AppLogger) Infof(format string, args ...any) {
-	l.log("INFO", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Successf(format string, args ...any) {
-	l.log("SUCCESS", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Warningf(format string, args ...any) {
-	l.log("WARNING", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) APIf(format string, args ...any) {
-	l.log("API", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Errorf(format string, args ...any) {
-	l.log("ERROR", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Matchf(format string, args ...any) {
-	l.log("MATCH", fmt.Sprintf(format, args...))
-}
-
-func (l *AppLogger) Fatalf(format string, args ...any) {
-	l.log("ERROR", fmt.Sprintf(format, args...))
-	os.Exit(1)
-}
-
-func (l *AppLogger) Fatal(args ...any) {
-	l.log("ERROR", strings.TrimSpace(fmt.Sprintln(args...)))
-	os.Exit(1)
-}
-
-func colorizeLevel(level string) string {
-	if !colorOutputEnabled {
-		return level
-	}
-	switch level {
-	case "ERROR":
-		return fcolor.New(fcolor.FgRed, fcolor.Bold).Sprint(level)
-	case "SUCCESS":
-		return fcolor.New(fcolor.FgGreen, fcolor.Bold).Sprint(level)
-	case "WARNING":
-		return fcolor.New(fcolor.FgYellow, fcolor.Bold).Sprint(level)
-	case "API":
-		return fcolor.New(fcolor.FgCyan, fcolor.Bold).Sprint(level)
-	case "MATCH":
-		return fcolor.New(fcolor.FgMagenta, fcolor.Bold).Sprint(level)
-	default:
-		return fcolor.New(fcolor.FgHiWhite, fcolor.Bold).Sprint(level)
-	}
-}
-
-type collectionTransferFile struct {
-	Version       int                        `json:"version"`
-	ExportedAtUTC string                     `json:"exported_at_utc"`
-	SourceLibrary plexSection                `json:"source_library"`
-	Collections   []collectionTransferRecord `json:"collections"`
-}
-
-type collectionTransferRecord struct {
-	Title     string `json:"title"`
-	GUID      string `json:"guid,omitempty"`
-	RatingKey string `json:"rating_key,omitempty"`
-	Subtype   string `json:"subtype,omitempty"`
-	Smart     bool   `json:"smart"`
-	Content   string `json:"content,omitempty"`
-}
-
-type collectionInventoryEntry struct {
-	Title      string
-	RatingKey  string
-	SectionKey string
-	GUID       string
-	Smart      bool
-	ItemCount  int
-}
-
-type collectionDuplicateRow struct {
-	Title          string
-	RatingKey      string
-	ItemCount      int
-	Smart          bool
-	DuplicateCount int
-}
-
-type collectionDeleteRow struct {
-	Title     string
-	RatingKey string
-	ItemCount int
-	Smart     bool
-	Status    string
-}
-
-type pathCleanReportRow struct {
-	Collection  string
-	RatingKey   string
-	FilePath    string
-	TitleBefore string
-	TitleAfter  string
-}
-
-type statsWordCount struct {
-	Word  string
-	Count int
+func init() {
+	web.SetDeps(web.Deps{
+		AppDisplayName:                    appDisplayName,
+		LoadConfig:                        loadConfig,
+		FetchSections:                     fetchSections,
+		FetchCollections:                  fetchCollections,
+		FetchSectionDetail:                fetchSectionDetail,
+		FetchSectionPreferences:           fetchSectionPreferences,
+		ExtractSectionLocations:           extractSectionLocations,
+		EnsureLibraryNameAvailable:        ensureLibraryNameAvailable,
+		ResolveCollectionTransferPath:     resolveCollectionTransferPath,
+		ResolveCollectionExportPath:       resolveCollectionExportPath,
+		ResolveCollectionExportPathForLib: resolveCollectionExportPathForLibrary,
+		ResolvePathRelativeToConfig:       resolvePathRelativeToConfig,
+		BackupArchiveDir:                  backupArchiveDir,
+		FormatBackupDateTime:              formatBackupDateTime,
+		MergePlexConfig:                   mergePlexConfig,
+		LoadSupplementalConfig:            loadSupplementalConfig,
+		LoadOpsConfig:                     loadOpsConfig,
+		CreateBackupArchive:               createBackupArchive,
+		RestoreFromBackup:                 restoreFromBackup,
+		RollbackLastRestore:               rollbackLastRestore,
+		ListBackupArchives:                listBackupArchives,
+		ParseLabelList:                    parseLabelList,
+		SelectSingleSection:               selectSingleSection,
+		LabelMatchingItems:                labelMatchingItems,
+		CleanLibraryTitles:                cleanLibraryTitles,
+		TranslateLibraryTitles:            translateLibraryTitles,
+		AnalyzeLibraryFileNameStats:       analyzeLibraryFileNameStats,
+		ExportCollections:                 exportCollections,
+		ImportCollections:                 importCollections,
+		InjectCollections:                 injectCollections,
+		ReportDuplicateCollections:        reportDuplicateCollections,
+		DeleteNonSmartCollections:         deleteNonSmartCollections,
+		PathCleanCollectionTitles:         pathCleanCollectionTitles,
+		ProcessCollections:                processCollections,
+		FetchCollectionDetails:            fetchCollectionDetails,
+		CreateLibraryFromSection:          createLibraryFromSection,
+		ApplySectionPreferences:           applySectionPreferences,
+		CreateCollection:                  createCollection,
+		DeleteNonSmartCollectionEntries: func(client *http.Client, cfg Config, entries []collectionInventoryEntry, logger *AppLogger) ([]web.CoreCollectionDeleteRow, int, int, error) {
+			rows, deleted, failed, err := deleteNonSmartCollectionEntries(client, cfg, entries, logger)
+			converted := make([]web.CoreCollectionDeleteRow, 0, len(rows))
+			for _, row := range rows {
+				converted = append(converted, web.CoreCollectionDeleteRow{
+					Title:     row.Title,
+					RatingKey: row.RatingKey,
+					ItemCount: row.ItemCount,
+					Smart:     row.Smart,
+					Status:    row.Status,
+				})
+			}
+			return converted, deleted, failed, err
+		},
+		BuildDuplicateCollectionRows:     buildDuplicateCollectionRows,
+		FetchCollectionInventory:         fetchCollectionInventory,
+		FetchCollectionItems:             fetchCollectionItems,
+		UpdateLibraryItemTitle:           updateLibraryItemTitle,
+		SectionTypeToPlexTypeCode:        sectionTypeToPlexTypeCode,
+		NormalizeCollectionName:          normalizeCollectionName,
+		ComposeCollectionContent:         composeCollectionContent,
+		LibraryItemFilePath:              libraryItemFilePath,
+		PathCleanTitleFromFilePath:       pathCleanTitleFromFilePath,
+		DefaultCloneLibraryName:          defaultCloneLibraryName,
+		WriteCSVReport:                   writeCSVReport,
+		UniqueCollectionReportPath:       uniqueCollectionReportPath,
+		UniqueCollectionReportPathForLib: uniqueCollectionReportPathForLibrary,
+		UniquePathCleanReportPath:        uniquePathCleanReportPath,
+		UniquePathCleanReportPathForLib:  uniquePathCleanReportPathForLibrary,
+		UniquePosterReportPath:           uniquePosterReportPath,
+		UniqueStatsReportPath:            uniqueStatsReportPath,
+		UniqueStatsReportPathForLib:      uniqueStatsReportPathForLibrary,
+		UniqueCleanReportPath:            uniqueCleanReportPath,
+		UniqueCleanReportPathForLib:      uniqueCleanReportPathForLibrary,
+		UniqueLabelReportPath:            uniqueLabelReportPath,
+		UniqueLabelReportPathForLib:      uniqueLabelReportPathForLibrary,
+		SanitizeFileName:                 sanitizeFileName,
+		SetRequestContext:                setRequestContext,
+		NewProgressTracker: func(logger *AppLogger, label string, total int) web.ProgressTrackerCompat {
+			return newProgressTracker(logger, label, total)
+		},
+	})
 }
 
 func main() {
@@ -566,6 +292,7 @@ func main() {
 	trialMode := flag.Bool("trial", false, "Alias for -trail")
 	uploadPosters := flag.Bool("upload-posters", false, "Upload generated posters to Plex collections")
 	genPostersMode := flag.Bool("gen-posters", false, "Generate collection posters for the selected library or libraries")
+	missingPostersOnlyMode := flag.Bool("missing-posters-only", false, "When used with -gen-posters, process only collections that appear to be using Plex auto-generated composite thumbnails")
 	labelTypeCollectionItemsMode := flag.Bool("label-types", false, "When used with -gen-posters, add the matched type collection name as a label on items in that collection")
 	collDupes := flag.Bool("coll-dupes", false, "Report duplicate collection names in a selected library to a CSV file")
 	deleteNonSmart := flag.Bool("coll-delete-non-smart", false, "Delete all non-smart collections from a selected library and write a CSV audit")
@@ -589,14 +316,14 @@ func main() {
 	collFile := flag.String("coll-file", "collections-export.json", "Path to the collections import/export file")
 	flag.Parse()
 	if *noColor {
-		colorOutputEnabled = false
+		core.ColorOutputEnabled = false
 		fcolor.NoColor = true
 	}
 	if *quietMode {
-		colorOutputEnabled = false
+		core.ColorOutputEnabled = false
 	}
 	if *trailMode || *trialMode {
-		trailModeEnabled = true
+		core.TrailModeEnabled = true
 	}
 
 	importMode := *collImport
@@ -666,6 +393,9 @@ func main() {
 	if !*genPostersMode && *labelTypeCollectionItemsMode {
 		log.Fatal("invalid flags: -label-types only works with -gen-posters; don't be silly")
 	}
+	if !*genPostersMode && *missingPostersOnlyMode {
+		log.Fatal("invalid flags: -missing-posters-only only works with -gen-posters")
+	}
 	setPromptScreenModeLabel(derivePromptScreenModeLabel(*genPostersMode, *uploadPosters, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, *cloneLibraryMode, *labelMode, *collInject, *cleanMode, *translateMode, translateOnlyMode))
 	labelsToAdd, err := parseLabelList(*labelAdd)
 	if err != nil {
@@ -682,11 +412,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to setup logger: %v", err)
 	}
-	logger.quiet = *quietMode
+	logger.Quiet = *quietMode
 	defer closeLogger()
 
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
-	logger.Printf("config: web=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *webPort, *noColor, *quietMode, trailModeEnabled, *uploadPosters, *genPostersMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	logger.Printf("config: web=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t missing_posters_only=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *webPort, *noColor, *quietMode, core.TrailModeEnabled, *uploadPosters, *genPostersMode, *missingPostersOnlyMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
 	if *webMode {
 		if *webPort <= 0 || *webPort > 65535 {
 			logger.Fatalf("invalid flags: -port must be between 1 and 65535")
@@ -886,39 +616,8 @@ func main() {
 		if err != nil {
 			logger.Fatalf("failed to select library: %v", err)
 		}
-		for _, section := range selectedSections {
-			logger.Printf("selected library: %s (%s)", section.Title, section.Key)
-		}
-
-		var wg sync.WaitGroup
-		errCh := make(chan error, len(selectedSections))
-		for _, section := range selectedSections {
-			section := section
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				collections, err := fetchCollections(client, cfg, section.Key, logger)
-				if err != nil {
-					errCh <- fmt.Errorf("fetch collections for %s: %w", section.Title, err)
-					return
-				}
-				logger.Printf("collections fetched: library=%s count=%d", section.Title, len(collections))
-
-				if err := processCollections(client, cfg, section.Title, collections, *uploadPosters, effectiveLabelTypeCollectionItemsMode, logger); err != nil {
-					errCh <- fmt.Errorf("process %s: %w", section.Title, err)
-					return
-				}
-			}()
-		}
-		wg.Wait()
-		close(errCh)
-
-		if len(errCh) > 0 {
-			errs := make([]string, 0, len(errCh))
-			for err := range errCh {
-				errs = append(errs, err.Error())
-			}
-			logger.Fatalf("processing failed: %s", strings.Join(errs, "; "))
+		if err := runPosterGeneration(client, cfg, selectedSections, *uploadPosters, effectiveLabelTypeCollectionItemsMode, *missingPostersOnlyMode, logger); err != nil {
+			logger.Fatalf("processing failed: %v", err)
 		}
 	}
 
@@ -1323,140 +1022,6 @@ func requireDirExists(name, path string) error {
 	return nil
 }
 
-func setupLogger(path string) (*AppLogger, func(), error) {
-	runLogPath := uniqueRunLogPath(path, time.Now())
-	f, err := os.OpenFile(runLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, nil, err
-	}
-	logger := &AppLogger{
-		console: log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds),
-		file:    log.New(f, "", log.LstdFlags|log.Lmicroseconds),
-	}
-	logger.Infof("log file: %s", runLogPath)
-	return logger, func() { _ = f.Close() }, nil
-}
-
-func uniqueCleanReportPath(outputDir string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, "clean", fmt.Sprintf("clean-%s.csv", timestamp))
-}
-
-func uniqueLabelReportPath(outputDir string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, "labels", fmt.Sprintf("labels-%s.csv", timestamp))
-}
-
-func writeLabelReport(path string, rows []labelReportRow) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create label report dir: %w", err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create label report file: %w", err)
-	}
-	defer f.Close()
-	csvField := func(s string) string {
-		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-	}
-	fmt.Fprintf(f, "%s|%s|%s|%s|%s|%s\n",
-		csvField("RatingKey"), csvField("Title"),
-		csvField("LabelsBefore"), csvField("LabelsAfter"),
-		csvField("CategoriesBefore"), csvField("CategoriesAfter"))
-	for _, r := range rows {
-		fmt.Fprintf(f, "%s|%s|%s|%s|%s|%s\n",
-			csvField(r.RatingKey), csvField(r.Title),
-			csvField(r.LabelsBefore), csvField(r.LabelsAfter),
-			csvField(r.CategoriesBefore), csvField(r.CategoriesAfter))
-	}
-	return nil
-}
-
-func writeCleanReport(path string, rows []cleanReportRow) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create clean report dir: %w", err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create clean report file: %w", err)
-	}
-	defer f.Close()
-	csvField := func(s string) string {
-		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-	}
-	fmt.Fprintf(f, "%s|%s|%s|%s|%s\n",
-		csvField("RatingKey"), csvField("TitleBefore"), csvField("TitleAfter"),
-		csvField("SortTitleBefore"), csvField("SortTitleAfter"))
-	for _, r := range rows {
-		fmt.Fprintf(f, "%s|%s|%s|%s|%s\n",
-			csvField(r.RatingKey), csvField(r.TitleBefore), csvField(r.TitleAfter),
-			csvField(r.SortTitleBefore), csvField(r.SortTitleAfter))
-	}
-	return nil
-}
-
-func writeCSVReport(path string, header []string, rows [][]string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create report dir: %w", err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create report file: %w", err)
-	}
-	defer f.Close()
-	writer := csv.NewWriter(f)
-	if len(header) > 0 {
-		if err := writer.Write(header); err != nil {
-			return err
-		}
-	}
-	for _, row := range rows {
-		if err := writer.Write(row); err != nil {
-			return err
-		}
-	}
-	writer.Flush()
-	return writer.Error()
-}
-
-func uniqueCollectionReportPath(outputDir, prefix string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, "collections", fmt.Sprintf("%s-%s.csv", prefix, timestamp))
-}
-
-func uniquePathCleanReportPath(outputDir string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, "path-clean", fmt.Sprintf("path-clean-%s.csv", timestamp))
-}
-
-func uniquePosterReportPath(outputDir string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, fmt.Sprintf("posters-%s.csv", timestamp))
-}
-
-func uniqueStatsReportPath(outputDir string, now time.Time) string {
-	timestamp := now.Format("20060102-150405")
-	return filepath.Join(outputDir, "stats", fmt.Sprintf("word-frequency-%s.csv", timestamp))
-}
-
-func uniqueRunLogPath(path string, now time.Time) string {
-	dir := filepath.Dir(path)
-	ext := filepath.Ext(path)
-	name := strings.TrimSuffix(filepath.Base(path), ext)
-	if name == "" {
-		name = "frantic-postr"
-	}
-	timestamp := now.Format("20060102-150405")
-	fileName := fmt.Sprintf("%s-%s", name, timestamp)
-	if ext != "" {
-		fileName += ext
-	}
-	if dir == "" || dir == "." {
-		return fileName
-	}
-	return filepath.Join(dir, fileName)
-}
-
 func backupArchiveDir(workspaceRoot string) string {
 	return filepath.Join(workspaceRoot, backupDirName)
 }
@@ -1701,7 +1266,7 @@ func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) erro
 	if err != nil {
 		return err
 	}
-	dryRun := trailModeEnabled
+	dryRun := core.TrailModeEnabled
 
 	if isInteractiveTerminal() {
 		proceed, err := confirmRestoreBackup(selectedBackup, dryRun)
@@ -1728,10 +1293,10 @@ func restoreFromBackup(cfg Config, restoreFilter string, logger *AppLogger) erro
 
 	var (
 		restoreZipPath string
-		manifestPath  string
-		rollbackZip   *zip.Writer
-		manifest      *rollbackManifest
-		seenManifest  map[string]struct{}
+		manifestPath   string
+		rollbackZip    *zip.Writer
+		manifest       *rollbackManifest
+		seenManifest   map[string]struct{}
 	)
 	if !dryRun {
 		restoreZipPath = filepath.Join(restoreLogDir, fmt.Sprintf("rollback-pre-restore-%s-%s.zip", host, timestamp))
@@ -2704,6 +2269,7 @@ func doRequestWithRetry(client *http.Client, retries, baseMs, maxMs int, logger 
 		if err != nil {
 			return nil, err
 		}
+		req = req.WithContext(currentRequestContext())
 		resp, err := client.Do(req)
 		if err == nil {
 			return resp, nil
@@ -2715,7 +2281,11 @@ func doRequestWithRetry(client *http.Client, retries, baseMs, maxMs int, logger 
 		if logger != nil {
 			logger.Warningf("%s timed out, retry %d/%d in %s: %v", operation, attempt+1, retries, delay.Round(time.Millisecond), err)
 		}
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-currentRequestContext().Done():
+			return nil, currentRequestContext().Err()
+		}
 	}
 	return nil, fmt.Errorf("request retries exhausted")
 }
@@ -2822,10 +2392,10 @@ func uiHeaderRow(appName, dateText string, width int) string {
 func setPromptScreenModeLabel(label string) {
 	trimmed := strings.TrimSpace(label)
 	if trimmed == "" {
-		promptScreenModeLabel = "Interactive"
+		core.PromptScreenModeLabel = "Interactive"
 		return
 	}
-	promptScreenModeLabel = trimmed
+	core.PromptScreenModeLabel = trimmed
 }
 
 func derivePromptScreenModeLabel(genPostersMode, uploadPosters, collDupes, deleteNonSmart, pathCleanMode, statsMode, collExport, collImport, backupMode, restoreMode, rollbackMode, cloneLibraryMode, labelMode, collInject, cleanMode, translateMode, translateOnlyMode bool) string {
@@ -3000,7 +2570,7 @@ func renderClassicPromptScreen(content []string, prompt, feedback string) {
 
 	fmt.Print("\033[2J\033[H")
 	dateText := time.Now().Format("2006-01-02")
-	header := uiPromptTitleRow(promptScreenModeLabel, appDisplayName, dateText, width)
+	header := uiPromptTitleRow(core.PromptScreenModeLabel, appDisplayName, dateText, width)
 	fmt.Println("")
 	fmt.Println(styleBright(fitToWidth(header, width)))
 	fmt.Println(styleDim(uiSeparator(width)))
@@ -3019,7 +2589,7 @@ func renderClassicPromptScreen(content []string, prompt, feedback string) {
 
 func promptWithClassicLayout(content []string, prompt, feedback string) (string, error) {
 	renderClassicPromptScreen(content, prompt, feedback)
-	input, err := stdinReader.ReadString('\n')
+	input, err := core.StdinReader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
@@ -3470,7 +3040,7 @@ func pathCleanCollectionTitles(client *http.Client, cfg Config, sections []plexS
 		progress.Advance()
 	}
 
-	reportPath := uniquePathCleanReportPath(cfg.OutputDir, time.Now())
+	reportPath := uniquePathCleanReportPathForLibrary(cfg.OutputDir, selectedSection.Title, time.Now())
 	if err := writeCSVReport(reportPath, []string{"collection", "rating_key", "file_path", "title_before", "title_after"}, reportRows); err != nil {
 		logger.Warningf("path clean: failed to write report: %v", err)
 	} else {
@@ -3865,7 +3435,7 @@ func labelMatchingItems(client *http.Client, cfg Config, selectedSection plexSec
 		}
 	}
 
-	reportPath := uniqueLabelReportPath(cfg.OutputDir, time.Now())
+	reportPath := uniqueLabelReportPathForLibrary(cfg.OutputDir, selectedSection.Title, time.Now())
 	if err := writeLabelReport(reportPath, reportRows); err != nil {
 		logger.Warningf("label mode: failed to write report: %v", err)
 	} else {
@@ -4031,7 +3601,7 @@ func cleanLibraryTitles(client *http.Client, cfg Config, sections []plexSection,
 		}
 	}
 
-	reportPath := uniqueCleanReportPath(cfg.OutputDir, time.Now())
+	reportPath := uniqueCleanReportPathForLibrary(cfg.OutputDir, selectedSection.Title, time.Now())
 	if err := writeCleanReport(reportPath, reportRows); err != nil {
 		logger.Warningf("clean mode: failed to write report: %v", err)
 	} else {
@@ -4317,13 +3887,13 @@ func waitForTranslationRateLimit(ratePerMinute int, logger *AppLogger) {
 		interval = time.Second
 	}
 
-	translateRateLimitMu.Lock()
+	core.TranslateRateLimitMu.Lock()
 	now := time.Now()
 	wait := time.Duration(0)
-	if now.Before(nextTranslateRequestAt) {
-		wait = nextTranslateRequestAt.Sub(now)
+	if now.Before(core.NextTranslateRequestAt) {
+		wait = core.NextTranslateRequestAt.Sub(now)
 	}
-	translateRateLimitMu.Unlock()
+	core.TranslateRateLimitMu.Unlock()
 
 	if wait > 0 {
 		if logger != nil {
@@ -4332,9 +3902,9 @@ func waitForTranslationRateLimit(ratePerMinute int, logger *AppLogger) {
 		time.Sleep(wait)
 	}
 
-	translateRateLimitMu.Lock()
-	nextTranslateRequestAt = time.Now().Add(interval)
-	translateRateLimitMu.Unlock()
+	core.TranslateRateLimitMu.Lock()
+	core.NextTranslateRequestAt = time.Now().Add(interval)
+	core.TranslateRateLimitMu.Unlock()
 }
 
 func uppercaseFirstLetter(s string) string {
@@ -4350,7 +3920,7 @@ func uppercaseFirstLetter(s string) string {
 
 func highlightFindMatches(text, find string) string {
 	needle := strings.TrimSpace(find)
-	if needle == "" || text == "" || !colorOutputEnabled {
+	if needle == "" || text == "" || !core.ColorOutputEnabled {
 		return text
 	}
 	lowerText := strings.ToLower(text)
@@ -4801,6 +4371,7 @@ func exportCollections(client *http.Client, cfg Config, sections []plexSection, 
 		return err
 	}
 	logger.Printf("collection export: selected library=%s (%s)", selectedSection.Title, selectedSection.Key)
+	exportPath = resolveCollectionExportPathForLibrary(exportPath, selectedSection.Title, time.Now())
 
 	collections, err := fetchCollections(client, cfg, selectedSection.Key, logger)
 	if err != nil {
@@ -4842,6 +4413,29 @@ func exportCollections(client *http.Client, cfg Config, sections []plexSection, 
 	}
 	logger.Successf("collection export complete: file=%s count=%d", exportPath, len(transfer.Collections))
 	return nil
+}
+
+func resolveCollectionExportPathForLibrary(exportPath, libraryName string, now time.Time) string {
+	ext := filepath.Ext(exportPath)
+	if ext == "" {
+		ext = ".json"
+	}
+	base := strings.TrimSuffix(filepath.Base(exportPath), ext)
+	if base == "" {
+		base = "collections-export"
+	}
+	dateSuffix := now.Format("20060102")
+	if strings.HasSuffix(base, "_"+dateSuffix) {
+		base = strings.TrimSuffix(base, "_"+dateSuffix)
+	}
+	libraryToken := strings.TrimSpace(sanitizeFileName(libraryName))
+	if libraryToken != "" {
+		if !strings.Contains(strings.ToLower(base), strings.ToLower(libraryToken)) {
+			base = base + "_" + libraryToken
+		}
+	}
+	filename := base + "_" + dateSuffix + ext
+	return filepath.Join(filepath.Dir(exportPath), filename)
 }
 
 func importCollections(client *http.Client, cfg Config, sections []plexSection, importPath string, logger *AppLogger) error {
@@ -5047,7 +4641,7 @@ func reportDuplicateCollections(client *http.Client, cfg Config, sections []plex
 		logger.Successf("duplicate collection: title=%q items=%s rating_key=%s", row[0], row[2], row[1])
 	}
 
-	reportPath := uniqueCollectionReportPath(cfg.OutputDir, "duplicate-collections", time.Now())
+	reportPath := uniqueCollectionReportPathForLibrary(cfg.OutputDir, "duplicate-collections", selectedSection.Title, time.Now())
 	if err := writeCSVReport(reportPath, []string{"title", "rating_key", "item_count", "smart", "duplicate_group_size"}, rows); err != nil {
 		return err
 	}
@@ -5072,7 +4666,7 @@ func deleteNonSmartCollections(client *http.Client, cfg Config, sections []plexS
 		return err
 	}
 
-	reportPath := uniqueCollectionReportPath(cfg.OutputDir, "deleted-non-smart-collections", time.Now())
+	reportPath := uniqueCollectionReportPathForLibrary(cfg.OutputDir, "deleted-non-smart-collections", selectedSection.Title, time.Now())
 	rows := make([][]string, 0, len(deletions))
 	for _, row := range deletions {
 		rows = append(rows, []string{
@@ -5129,7 +4723,7 @@ func analyzeLibraryFileNameStats(client *http.Client, cfg Config, sections []ple
 	}
 
 	rows := buildStatsRows(counts)
-	reportPath := uniqueStatsReportPath(cfg.OutputDir, time.Now())
+	reportPath := uniqueStatsReportPathForLibrary(cfg.OutputDir, selectedSection.Title, time.Now())
 	if err := writeCSVReport(reportPath, []string{"word", "instances"}, rows); err != nil {
 		return err
 	}
@@ -5407,7 +5001,17 @@ func parseSelectionInput(input string, max int) ([]int, error) {
 	return indices, nil
 }
 
-func processCollections(client *http.Client, cfg Config, libraryName string, collections []plexCollection, upload bool, labelTypeCollectionItems bool, logger *AppLogger) error {
+func processCollections(client *http.Client, cfg Config, libraryName string, collections []plexCollection, upload bool, labelTypeCollectionItems bool, missingPostersOnly bool, logger *AppLogger) error {
+	if missingPostersOnly {
+		before := len(collections)
+		collections = filterCollectionsLikelyMissingDedicatedPoster(collections)
+		logger.Infof("poster mode filter: library=%s missing_posters_only=true selected=%d skipped=%d", libraryName, len(collections), before-len(collections))
+	}
+	if len(collections) == 0 {
+		logger.Warningf("poster mode: no collections to process for library=%s", libraryName)
+		return nil
+	}
+
 	outDir := filepath.Join(cfg.OutputDir, sanitizeFileName(libraryName))
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -5520,6 +5124,30 @@ func processCollections(client *http.Client, cfg Config, libraryName string, col
 		logger.Infof("poster report: written %s (%d rows)", reportPath, len(reportRows))
 	}
 	return nil
+}
+
+func filterCollectionsLikelyMissingDedicatedPoster(collections []plexCollection) []plexCollection {
+	filtered := make([]plexCollection, 0, len(collections))
+	for _, collection := range collections {
+		if !collectionLikelyHasDedicatedPoster(collection) {
+			filtered = append(filtered, collection)
+		}
+	}
+	return filtered
+}
+
+func collectionLikelyHasDedicatedPoster(collection plexCollection) bool {
+	thumb := strings.ToLower(strings.TrimSpace(collection.Thumb))
+	if thumb == "" {
+		return false
+	}
+	if strings.HasPrefix(thumb, "/library/collections/") {
+		return false
+	}
+	if strings.Contains(thumb, "/composite/") || strings.Contains(thumb, "composite") {
+		return false
+	}
+	return true
 }
 
 func isTypeCollection(cfg Config, collectionName string) bool {
@@ -5658,7 +5286,7 @@ func uploadCollectionPoster(client *http.Client, cfg Config, collection plexColl
 }
 
 func shouldSkipPlexWrite(logger *AppLogger, operation, requestURL string) bool {
-	if !trailModeEnabled {
+	if !core.TrailModeEnabled {
 		return false
 	}
 	if logger != nil {
