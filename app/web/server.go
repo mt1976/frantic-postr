@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,7 +52,49 @@ func (s *webServer) routes() http.Handler {
 	mux.HandleFunc("/api/plex/test", s.handlePlexTest)
 	mux.HandleFunc("/api/action/", s.handleAction)
 	mux.HandleFunc("/api/sections/", s.handleSectionCollections)
-	return mux
+	return s.withConnectionLogging(mux)
+}
+
+func (s *webServer) withConnectionLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, port, hostLabel := resolveRemotePeer(r)
+		message := fmt.Sprintf("connection from %s port %s host %s method=%s path=%s", ip, port, hostLabel, r.Method, r.URL.Path)
+		s.logger.APIf("%s", message)
+		s.appendActionLog("API " + message)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func resolveRemotePeer(r *http.Request) (string, string, string) {
+	remote := strings.TrimSpace(r.RemoteAddr)
+	if remote == "" {
+		return "unknown", "unknown", "unresolved"
+	}
+	host, port, err := net.SplitHostPort(remote)
+	if err != nil {
+		return remote, "unknown", "unresolved"
+	}
+	ip := strings.TrimSpace(host)
+	if ip == "" {
+		ip = "unknown"
+	}
+	if strings.TrimSpace(port) == "" {
+		port = "unknown"
+	}
+	hostLabel := "unresolved"
+	if parsed := net.ParseIP(ip); parsed != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
+		defer cancel()
+		names, lookupErr := net.DefaultResolver.LookupAddr(ctx, parsed.String())
+		if lookupErr == nil && len(names) > 0 {
+			resolved := strings.TrimSpace(names[0])
+			resolved = strings.TrimSuffix(resolved, ".")
+			if resolved != "" {
+				hostLabel = resolved
+			}
+		}
+	}
+	return ip, port, hostLabel
 }
 
 func (s *webServer) handleIndex(w http.ResponseWriter, r *http.Request) {
