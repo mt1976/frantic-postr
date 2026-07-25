@@ -197,6 +197,20 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			color: var(--fp-deep);
 			box-shadow: 0 8px 22px rgba(35,53,60,0.1);
 		}
+		.uk-button-primary {
+			background: linear-gradient(140deg, #d36b2d 0%, #e3924b 100%);
+			border: 1px solid rgba(166,91,33,0.62);
+			min-height: 42px;
+			padding: 0 18px;
+			box-shadow: 0 8px 18px rgba(166,91,33,0.22);
+			transition: transform 160ms ease, box-shadow 180ms ease, filter 160ms ease;
+		}
+		.uk-button-primary:hover,
+		.uk-button-primary:focus {
+			transform: translateY(-1px);
+			box-shadow: 0 11px 24px rgba(166,91,33,0.28);
+			filter: brightness(1.02);
+		}
     .fp-banner {
       border-radius: 18px;
       padding: 14px 16px;
@@ -219,6 +233,114 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
       white-space: pre-wrap;
       border: 1px solid rgba(255,255,255,0.07);
     }
+		.fp-log-wrap {
+			position: relative;
+		}
+		.fp-copy-log {
+			position: absolute;
+			right: 12px;
+			top: 12px;
+			z-index: 2;
+		}
+		.fp-log-wrap .fp-log {
+			padding-top: 56px;
+		}
+		.fp-template-manager .uk-form-label {
+			margin-bottom: 6px;
+		}
+		.fp-config-list {
+			border: 1px solid var(--fp-line);
+			border-radius: 14px;
+			background: rgba(255,255,255,0.7);
+			padding: 10px;
+			max-height: 360px;
+			overflow: auto;
+		}
+		.fp-config-list-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 10px;
+			padding: 8px 10px;
+			border-radius: 10px;
+			background: rgba(35,53,60,0.06);
+			margin-bottom: 8px;
+		}
+		.fp-config-list-row:last-child {
+			margin-bottom: 0;
+		}
+		.fp-config-list-value {
+			font-family: "IBM Plex Mono", monospace;
+			font-size: 12px;
+			word-break: break-word;
+		}
+		.fp-config-list-empty {
+			padding: 10px;
+			color: rgba(24,33,38,0.62);
+			font-family: "IBM Plex Mono", monospace;
+			font-size: 12px;
+		}
+		.fp-preview-panel {
+			min-height: 220px;
+			border-radius: 14px;
+			border: 1px dashed rgba(24,33,38,0.22);
+			background: rgba(255,255,255,0.54);
+			padding: 12px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+		}
+		.fp-inline-editor {
+			border: 1px solid var(--fp-line);
+			border-radius: 14px;
+			padding: 12px;
+			background: rgba(255,255,255,0.66);
+		}
+		.fp-inline-chip-wrap {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin-top: 10px;
+		}
+		.fp-inline-chip {
+			display: inline-flex;
+			align-items: center;
+			gap: 8px;
+			border-radius: 999px;
+			padding: 6px 10px;
+			background: rgba(35,53,60,0.1);
+			font-family: "IBM Plex Mono", monospace;
+			font-size: 12px;
+		}
+		.fp-inline-chip button {
+			border: 0;
+			background: rgba(157,47,47,0.14);
+			color: var(--fp-error);
+			border-radius: 999px;
+			width: 20px;
+			height: 20px;
+			line-height: 20px;
+			padding: 0;
+			cursor: pointer;
+		}
+		.fp-config-structured {
+			display: grid;
+			gap: 10px;
+		}
+		.fp-lookup-card {
+			border: 1px solid var(--fp-line);
+			border-radius: 12px;
+			padding: 10px;
+			background: rgba(255,255,255,0.72);
+		}
+		.fp-editor-mode-switch {
+			display: flex;
+			gap: 8px;
+			margin-bottom: 8px;
+		}
+		.fp-editor-mode-switch button.uk-button-primary {
+			pointer-events: none;
+		}
 		.fp-progress-wrap {
 			border-radius: 14px;
 			border: 1px solid var(--fp-line);
@@ -281,10 +403,34 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
     }
     .fp-actions-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 	  gap: 22px;
-			align-items: start;
+			align-items: stretch;
     }
+		.fp-actions-grid > .uk-card:last-child:nth-child(odd) {
+			grid-column: 1 / -1;
+		}
+		.fp-actions-grid > .uk-card {
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+		}
+		.fp-card .fp-button-group {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 8px;
+		}
+		.fp-card .fp-action-row {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			align-items: center;
+		}
+		.fp-card .fp-action-row > .uk-button {
+			flex: 0 0 auto;
+			margin-top: 2px;
+		}
 		.uk-switcher > li {
 			margin-top: 4px;
 			padding-top: 4px;
@@ -354,11 +500,25 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			color: var(--fp-accent);
 			animation: fp-pulse 1s ease-in-out infinite;
 		}
+		.fp-glyph-icon {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 14px;
+			line-height: 1;
+			color: currentColor;
+		}
 		@keyframes fp-pulse {
 			0%, 100% { opacity: 0.45; }
 			50% { opacity: 1; }
 		}
     @media (max-width: 640px) {
+			.fp-actions-grid {
+				grid-template-columns: minmax(0, 1fr);
+			}
+			.fp-actions-grid > .uk-card:last-child:nth-child(odd) {
+				grid-column: auto;
+			}
       .fp-shell { padding: 14px; }
       .fp-hero { padding: 22px; border-radius: 22px; }
       .fp-log { min-height: 220px; }
@@ -395,176 +555,266 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
     <div id="status-banner" class="fp-banner uk-margin-bottom"></div>
 
 	<div class="uk-width-expand@l">
-		<ul uk-tab>
-			<li><a href="#"><span uk-icon="settings" class="uk-margin-small-right"></span>Config</a></li>
-			<li><a href="#"><span uk-icon="image" class="uk-margin-small-right"></span>Posters</a></li>
-			<li><a href="#"><span uk-icon="folder" class="uk-margin-small-right"></span>Library</a></li>
-			<li><a href="#"><span uk-icon="thumbnails" class="uk-margin-small-right"></span>Collections</a></li>
-			<li><a href="#"><span uk-icon="lock" class="uk-margin-small-right"></span>Safety</a></li>
-		</ul>
-		<ul class="uk-switcher uk-margin">
+		<div class="uk-flex uk-flex-between uk-flex-middle uk-flex-wrap uk-gap-small">
+			<ul uk-tab="connect: #main-switcher" class="uk-margin-remove-bottom">
+				<li><a href="#"><span uk-icon="settings" class="uk-margin-small-right"></span>Config</a></li>
+				<li><a href="#"><span uk-icon="cog" class="uk-margin-small-right"></span>Runtime</a></li>
+				<li><a href="#"><span uk-icon="image" class="uk-margin-small-right"></span>Posters</a></li>
+				<li><a href="#"><span uk-icon="folder" class="uk-margin-small-right"></span>Library</a></li>
+				<li><a href="#"><span uk-icon="thumbnails" class="uk-margin-small-right"></span>Collections</a></li>
+				<li><a href="#"><span uk-icon="lock" class="uk-margin-small-right"></span>Backup & Restore</a></li>
+			</ul>
+			<div>
+				<button class="uk-button uk-button-primary" id="save-config-global" type="submit" form="config-form" style="display:none;"><span class="uk-margin-small-right" aria-hidden="true">&#128190;</span>Save config</button>
+			</div>
+		</div>
+		<ul id="main-switcher" class="uk-switcher uk-margin">
+			<li>
+				<form id="config-form">
+					<div class="fp-actions-grid">
+						<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
+							<h2 class="fp-section-title">Configuration</h2>
+							<p class="fp-muted uk-margin-small-top">If you do not pass <code>--config</code>, the web UI uses <code>config/config.toml</code>. Saving here writes the exposed settings back to the active config files, and keeps Plex secrets in <code>plex_config</code> when you use a split file.</p>
+							<div class="uk-grid-small" uk-grid>
+								<div class="uk-width-1-1">
+									<label class="uk-form-label" for="output-dir-input">Output directory</label>
+									<input class="uk-input" id="output-dir-input" name="output_dir" type="text">
+								</div>
+								<div class="uk-width-1-1">
+									<label class="uk-form-label" for="log-file-input">Log file</label>
+									<input class="uk-input" id="log-file-input" name="log_file" type="text">
+								</div>
+								<div class="uk-width-1-2">
+									<label class="uk-form-label" for="backup-retention-days">Backup retention days</label>
+									<input class="uk-input" id="backup-retention-days" type="number" min="0">
+								</div>
+								<div class="uk-width-1-1">
+									<p class="fp-footer-note uk-margin-remove-bottom">The server stays local to 127.0.0.1.</p>
+								</div>
+							</div>
+						</div>
+						<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
+							<h2 class="fp-section-title">Plex Configuration</h2>
+							<div class="uk-grid-small" uk-grid>
+								<div class="uk-width-1-1">
+									<label class="uk-form-label" for="base-url">Plex URL</label>
+									<input class="uk-input" id="base-url" name="base_url" type="url" required>
+								</div>
+								<div class="uk-width-1-1">
+									<label class="uk-form-label" for="token">API key / token</label>
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<input class="uk-input" id="token" name="token" type="password" autocomplete="off" style="min-width: 260px;">
+										<button class="uk-button uk-button-default" type="button" data-toggle-password="token" aria-label="Reveal token"><span uk-icon="eye" class="uk-margin-small-right"></span>Show</button>
+									</div>
+								</div>
+								<div class="uk-width-1-2">
+									<label class="uk-form-label" for="retries">Retries</label>
+									<input class="uk-input" id="retries" name="retries" type="number" min="1">
+								</div>
+								<div class="uk-width-1-2">
+									<label class="uk-form-label" for="workers">Workers</label>
+									<input class="uk-input" id="workers" name="workers" type="number" min="1">
+								</div>
+								<div class="uk-width-1-2">
+									<label class="uk-form-label" for="retry-base-ms">Retry base ms</label>
+									<input class="uk-input" id="retry-base-ms" name="retry_base_ms" type="number" min="1">
+								</div>
+								<div class="uk-width-1-2">
+									<label class="uk-form-label" for="retry-max-ms">Retry max ms</label>
+									<input class="uk-input" id="retry-max-ms" name="retry_max_ms" type="number" min="1">
+								</div>
+								<div class="uk-width-1-1">
+									<button class="uk-button uk-button-secondary fp-test-button" id="test-plex-connection" type="button"><span class="fp-glyph-icon uk-margin-small-right" aria-hidden="true">&#129514;</span>Test Plex connection <span class="fp-test-button-icon" id="test-plex-connection-icon" aria-hidden="true"></span></button>
+								</div>
+							</div>
+						</div>
+						<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
+							<h2 class="fp-section-title">Config Files and Templates</h2>
+							<p class="fp-muted uk-margin-small-top">Template images can be selected from uploaded files or replaced by uploading a new image.</p>
+							<div class="uk-grid-small" uk-grid>
+								<div class="uk-width-1-1 fp-template-manager" data-target-input="template-image" data-upload-role="template-image-main" data-label="Template image">
+									<label class="uk-form-label" for="template-image-select">Template image</label>
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<select class="uk-select fp-template-select" id="template-image-select" style="min-width: 260px;"></select>
+										<input class="uk-input fp-template-upload" id="template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
+									</div>
+								</div>
+								<div class="uk-width-1-1 fp-template-manager" data-target-input="type-template-image" data-upload-role="template-image-type" data-label="Type template image">
+									<label class="uk-form-label" for="type-template-image-select">Type template image</label>
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<select class="uk-select fp-template-select" id="type-template-image-select" style="min-width: 260px;"></select>
+										<input class="uk-input fp-template-upload" id="type-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
+									</div>
+								</div>
+								<div class="uk-width-1-1 fp-template-manager" data-target-input="studio-template-image" data-upload-role="template-image-studio" data-label="Studio template image">
+									<label class="uk-form-label" for="studio-template-image-select">Studio template image</label>
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<select class="uk-select fp-template-select" id="studio-template-image-select" style="min-width: 260px;"></select>
+										<input class="uk-input fp-template-upload" id="studio-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
+									</div>
+								</div>
+								<div class="uk-width-1-1 fp-template-manager" data-target-input="admin-template-image" data-upload-role="template-image-admin" data-label="Admin template image">
+									<label class="uk-form-label" for="admin-template-image-select">Admin template image</label>
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<select class="uk-select fp-template-select" id="admin-template-image-select" style="min-width: 260px;"></select>
+										<input class="uk-input fp-template-upload" id="admin-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
+									</div>
+								</div>
+								<div class="uk-width-1-1">
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<button class="uk-button uk-button-default" type="button" data-config-editor="type-collections"><span uk-icon="list" class="uk-margin-small-right"></span>Edit type collections list</button>
+										<button class="uk-button uk-button-default" type="button" data-config-editor="studio-collections"><span uk-icon="list" class="uk-margin-small-right"></span>Edit studio collections list</button>
+										<button class="uk-button uk-button-default" type="button" data-config-editor="admin-collections"><span uk-icon="list" class="uk-margin-small-right"></span>Edit admin collections list</button>
+									</div>
+								</div>
+								<div class="uk-width-1-1">
+									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+										<button class="uk-button uk-button-default" type="button" data-config-editor="label-config"><span uk-icon="file-edit" class="uk-margin-small-right"></span>Edit label config</button>
+										<button class="uk-button uk-button-default" type="button" data-config-editor="collection-config"><span uk-icon="file-edit" class="uk-margin-small-right"></span>Edit collection config</button>
+									</div>
+									<p class="fp-footer-note uk-margin-small-top">Plex supplemental config path is intentionally hidden in web mode.</p>
+								</div>
+							</div>
+							<input id="template-image" name="template_image" type="hidden">
+							<input id="type-template-image" name="type_template_image" type="hidden">
+							<input id="studio-template-image" name="studio_template_image" type="hidden">
+							<input id="admin-template-image" name="admin_template_image" type="hidden">
+							<input id="type-collections-file" name="type_collections_file" type="hidden">
+							<input id="studio-collections-file" name="studio_collections_file" type="hidden">
+							<input id="admin-collections-file" name="admin_collections_file" type="hidden">
+							<input id="plex-config-file" name="plex_config" type="hidden">
+							<input id="label-config-file" name="label_config" type="hidden">
+							<input id="collection-config-file" name="collection_config" type="hidden">
+						</div>
+					<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
+						<h2 class="fp-section-title">Poster Configuration</h2>
+						<p class="fp-muted uk-margin-small-top">Generate a sample render on demand to preview how text styling appears on each template type.</p>
+						<div class="uk-grid-small" uk-grid>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label" for="preview-template-kind">Template type</label>
+								<select id="preview-template-kind" class="uk-select">
+									<option value="default">Default template</option>
+									<option value="type">Type template</option>
+									<option value="studio">Studio template</option>
+									<option value="admin">Admin template</option>
+								</select>
+							</div>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label" for="preview-sample-text">Sample text</label>
+								<input id="preview-sample-text" class="uk-input" type="text" value="Sample Collection 2026" placeholder="Sample Collection 2026">
+							</div>
+							<div class="uk-width-1-1">
+								<button class="uk-button uk-button-secondary" id="generate-template-preview" type="button"><span uk-icon="image" class="uk-margin-small-right"></span>Generate sample</button>
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-file">Font file</label>
+								<input class="uk-input" id="font-file" type="text">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-size">Font size</label>
+								<input class="uk-input" id="font-size" type="number" min="0" step="0.1">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-color">Font color</label>
+								<input class="uk-input" id="font-color" type="text" placeholder="#FFFFFF">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-shadow-color">Shadow color</label>
+								<input class="uk-input" id="font-shadow-color" type="text">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-glow-color">Glow color</label>
+								<input class="uk-input" id="font-glow-color" type="text">
+							</div>
+							<div class="uk-width-1-3">
+								<label class="uk-form-label" for="font-shadow-offset-x">Shadow X</label>
+								<input class="uk-input" id="font-shadow-offset-x" type="number">
+							</div>
+							<div class="uk-width-1-3">
+								<label class="uk-form-label" for="font-shadow-offset-y">Shadow Y</label>
+								<input class="uk-input" id="font-shadow-offset-y" type="number">
+							</div>
+							<div class="uk-width-1-3">
+								<label class="uk-form-label" for="font-glow-radius">Glow radius</label>
+								<input class="uk-input" id="font-glow-radius" type="number" min="0">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-glow-alpha">Glow alpha</label>
+								<input class="uk-input" id="font-glow-alpha" type="number" min="0" max="1" step="0.01">
+							</div>
+							<div class="uk-width-1-2">
+								<label class="uk-form-label" for="font-y-offset">Y offset</label>
+								<input class="uk-input" id="font-y-offset" type="number">
+							</div>
+						</div>
+						<div id="template-preview-meta" class="fp-footer-note uk-margin-small-top">No preview generated yet.</div>
+						<div id="template-preview-panel" class="fp-preview-panel uk-margin-small-top">
+							<img id="template-preview-image" alt="Template preview" style="display:none; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--fp-line);">
+							<p id="template-preview-empty" class="fp-muted uk-margin-remove">Click Generate sample to render a preview.</p>
+						</div>
+					</div>
+					<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
+						<h2 class="fp-section-title">Text Cleanup and Stats</h2>
+						<p class="fp-muted uk-margin-small-top">Manage translation, clean replacements, and stats exclude words with modern editors and raw fallbacks.</p>
+						<div class="uk-grid-small" uk-grid>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label" for="translate-endpoint">Translate endpoint</label>
+								<input class="uk-input" id="translate-endpoint" name="translate_endpoint" type="url">
+							</div>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label" for="translate-api-key">Translate API key</label>
+								<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
+									<input class="uk-input" id="translate-api-key" name="translate_api_key" type="password" autocomplete="off" style="min-width: 260px;">
+									<button class="uk-button uk-button-default" type="button" data-toggle-password="translate-api-key" aria-label="Reveal translate API key"><span uk-icon="eye" class="uk-margin-small-right"></span>Show</button>
+								</div>
+							</div>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label" for="translate-rate-limit">Translate rate limit per minute</label>
+								<input class="uk-input" id="translate-rate-limit" name="translate_rate_limit_per_minute" type="number" min="1">
+							</div>
+							<div class="uk-width-1-1">
+								<label><input class="uk-checkbox" id="translate-to-english" type="checkbox"> Translate to English in clean config</label>
+							</div>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label">Clean replacements</label>
+								<div class="fp-inline-editor">
+									<div class="uk-grid-small" uk-grid>
+										<div class="uk-width-2-5@s"><input class="uk-input" id="clean-repl-find" type="text" placeholder="Find text"></div>
+										<div class="uk-width-2-5@s"><input class="uk-input" id="clean-repl-replace" type="text" placeholder="Replace with"></div>
+										<div class="uk-width-1-5@s"><button class="uk-button uk-button-secondary uk-width-1-1" id="clean-repl-add" type="button">Add</button></div>
+									</div>
+									<div id="clean-repl-list" class="fp-config-list uk-margin-small-top"></div>
+									<details class="uk-margin-small-top">
+										<summary class="fp-footer-note">Raw editor</summary>
+										<textarea class="uk-textarea uk-margin-small-top" id="clean-replacements" rows="6" placeholder="& = and\nFULL MOVIE = "></textarea>
+									</details>
+								</div>
+							</div>
+							<div class="uk-width-1-1">
+								<label class="uk-form-label">Stats exclude words</label>
+								<div class="fp-inline-editor">
+									<div class="uk-grid-small" uk-grid>
+										<div class="uk-width-4-5@s uk-width-1-1"><input class="uk-input" id="stats-word-input" type="text" placeholder="Add word"></div>
+										<div class="uk-width-1-5@s uk-width-1-1"><button class="uk-button uk-button-secondary uk-width-1-1" id="stats-word-add" type="button">Add</button></div>
+									</div>
+									<div id="stats-words-chip-list" class="fp-inline-chip-wrap"></div>
+									<details class="uk-margin-small-top">
+										<summary class="fp-footer-note">Raw editor</summary>
+										<textarea class="uk-textarea uk-margin-small-top" id="stats-exclude-words" rows="4" placeholder="comma,separated,words"></textarea>
+									</details>
+								</div>
+							</div>
+						</div>
+					</div>
+					</div>
+				</form>
+			</li>
 			<li>
 				<div class="fp-actions-grid">
-					<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
-						<h2 class="fp-section-title">Configuration</h2>
-						<p class="fp-muted uk-margin-small-top">If you do not pass <code>--config</code>, the web UI uses <code>config/config.toml</code>. Saving here writes the exposed settings back to the active config files, and keeps Plex secrets in <code>plex_config</code> when you use a split file.</p>
-						<form id="config-form" class="uk-grid-small" uk-grid>
-            <div class="uk-width-1-1">
-              <label class="uk-form-label" for="base-url">Plex URL</label>
-              <input class="uk-input" id="base-url" name="base_url" type="url" required>
-            </div>
-            <div class="uk-width-1-1">
-              <label class="uk-form-label" for="token">API key / token</label>
-			  <input class="uk-input" id="token" name="token" type="text" autocomplete="off">
-            </div>
-            <div class="uk-width-1-2">
-              <label class="uk-form-label" for="retries">Retries</label>
-              <input class="uk-input" id="retries" name="retries" type="number" min="1">
-            </div>
-            <div class="uk-width-1-2">
-              <label class="uk-form-label" for="workers">Workers</label>
-              <input class="uk-input" id="workers" name="workers" type="number" min="1">
-            </div>
-            <div class="uk-width-1-2">
-              <label class="uk-form-label" for="retry-base-ms">Retry base ms</label>
-              <input class="uk-input" id="retry-base-ms" name="retry_base_ms" type="number" min="1">
-            </div>
-            <div class="uk-width-1-2">
-              <label class="uk-form-label" for="retry-max-ms">Retry max ms</label>
-              <input class="uk-input" id="retry-max-ms" name="retry_max_ms" type="number" min="1">
-            </div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="output-dir-input">Output directory</label>
-							<input class="uk-input" id="output-dir-input" name="output_dir" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="log-file-input">Log file</label>
-							<input class="uk-input" id="log-file-input" name="log_file" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="translate-endpoint">Translate endpoint</label>
-							<input class="uk-input" id="translate-endpoint" name="translate_endpoint" type="url">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="translate-api-key">Translate API key</label>
-							<input class="uk-input" id="translate-api-key" name="translate_api_key" type="password" autocomplete="off">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="translate-rate-limit">Translate rate limit per minute</label>
-							<input class="uk-input" id="translate-rate-limit" name="translate_rate_limit_per_minute" type="number" min="1">
-						</div>
-						<div class="uk-width-1-1">
-							<h3 class="fp-section-title uk-margin-small-top">Config files and templates</h3>
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="template-image">Template image</label>
-							<input class="uk-input" id="template-image" name="template_image" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="type-template-image">Type template image</label>
-							<input class="uk-input" id="type-template-image" name="type_template_image" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="studio-template-image">Studio template image</label>
-							<input class="uk-input" id="studio-template-image" name="studio_template_image" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="admin-template-image">Admin template image</label>
-							<input class="uk-input" id="admin-template-image" name="admin_template_image" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="type-collections-file">Type collections file</label>
-							<input class="uk-input" id="type-collections-file" name="type_collections_file" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="studio-collections-file">Studio collections file</label>
-							<input class="uk-input" id="studio-collections-file" name="studio_collections_file" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="admin-collections-file">Admin collections file</label>
-							<input class="uk-input" id="admin-collections-file" name="admin_collections_file" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="plex-config-file">Plex config file</label>
-							<input class="uk-input" id="plex-config-file" name="plex_config" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="label-config-file">Label config file</label>
-							<input class="uk-input" id="label-config-file" name="label_config" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="collection-config-file">Collection config file</label>
-							<input class="uk-input" id="collection-config-file" name="collection_config" type="text">
-						</div>
-						<div class="uk-width-1-1">
-							<h3 class="fp-section-title uk-margin-small-top">Cleaning, stats, backup, and font</h3>
-						</div>
-						<div class="uk-width-1-1">
-							<label><input class="uk-checkbox" id="translate-to-english" type="checkbox"> Translate to English in clean config</label>
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="clean-replacements">Clean replacements</label>
-							<textarea class="uk-textarea" id="clean-replacements" rows="6" placeholder="& =  and 
-		FULL MOVIE =  "></textarea>
-						</div>
-						<div class="uk-width-1-1">
-							<label class="uk-form-label" for="stats-exclude-words">Stats exclude words</label>
-							<textarea class="uk-textarea" id="stats-exclude-words" rows="4" placeholder="comma,separated,words"></textarea>
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="backup-retention-days">Backup retention days</label>
-							<input class="uk-input" id="backup-retention-days" type="number" min="0">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-file">Font file</label>
-							<input class="uk-input" id="font-file" type="text">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-size">Font size</label>
-							<input class="uk-input" id="font-size" type="number" min="0" step="0.1">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-color">Font color</label>
-							<input class="uk-input" id="font-color" type="text" placeholder="#FFFFFF">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-shadow-color">Shadow color</label>
-							<input class="uk-input" id="font-shadow-color" type="text">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-glow-color">Glow color</label>
-							<input class="uk-input" id="font-glow-color" type="text">
-						</div>
-						<div class="uk-width-1-3">
-							<label class="uk-form-label" for="font-shadow-offset-x">Shadow X</label>
-							<input class="uk-input" id="font-shadow-offset-x" type="number">
-						</div>
-						<div class="uk-width-1-3">
-							<label class="uk-form-label" for="font-shadow-offset-y">Shadow Y</label>
-							<input class="uk-input" id="font-shadow-offset-y" type="number">
-						</div>
-						<div class="uk-width-1-3">
-							<label class="uk-form-label" for="font-glow-radius">Glow radius</label>
-							<input class="uk-input" id="font-glow-radius" type="number" min="0">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-glow-alpha">Glow alpha</label>
-							<input class="uk-input" id="font-glow-alpha" type="number" min="0" max="1" step="0.01">
-						</div>
-						<div class="uk-width-1-2">
-							<label class="uk-form-label" for="font-y-offset">Y offset</label>
-							<input class="uk-input" id="font-y-offset" type="number">
-						</div>
-		            <div class="uk-width-1-1 uk-flex uk-flex-between uk-flex-middle uk-margin-small-top uk-flex-wrap uk-gap-small">
-		              <span class="fp-footer-note">The server stays local to 127.0.0.1.</span>
-		              <div class="uk-flex uk-gap-small uk-flex-wrap">
-								<button class="uk-button uk-button-default fp-test-button" id="test-plex-connection" type="button">Test Plex connection <span class="fp-test-button-icon" id="test-plex-connection-icon" aria-hidden="true"></span></button>
-		                <button class="uk-button uk-button-primary" type="submit"><span uk-icon="check" class="uk-margin-small-right"></span>Save config</button>
-		              </div>
-		            </div>
-						</form>
-					</div>
-
 					<div class="uk-card uk-card-body fp-card uk-animation-slide-left-small">
 						<h2 class="fp-section-title">Runtime</h2>
 						<dl class="uk-description-list uk-description-list-divider">
@@ -618,7 +868,9 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <label class="uk-form-label" for="translate-section">Library</label>
                   <select class="uk-select" id="translate-section"></select>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="translate-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Run translation</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-primary" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Run translation</button>
+									</div>
                 </form>
               </div>
               <div class="uk-card uk-card-body fp-card">
@@ -626,7 +878,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                 <form id="stats-form" class="uk-margin-small-bottom">
                   <label class="uk-form-label" for="stats-section">Stats library</label>
                   <select class="uk-select" id="stats-section"></select>
-									<button class="uk-button uk-button-secondary uk-margin-top" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Run stats</button>
+									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Run stats</button>
                 </form>
                 <hr>
                 <form id="label-form" class="uk-grid-small" uk-grid>
@@ -677,7 +929,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <select class="uk-select" id="export-section"></select>
                   <label class="uk-form-label uk-margin-small-top" for="export-file">Export file</label>
                   <input class="uk-input" id="export-file" type="text">
-									<button class="uk-button uk-button-secondary uk-margin-top" type="submit"><span uk-icon="download" class="uk-margin-small-right"></span>Export collections</button>
+									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="download" class="uk-margin-small-right"></span>Export collections</button>
                 </form>
                 <hr>
                 <form id="import-form">
@@ -693,7 +945,9 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 										<button class="uk-button uk-button-secondary" id="upload-import-file" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload import file</button>
 									</div>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="import-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="upload" class="uk-margin-small-right"></span>Import collections</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-primary" type="submit"><span uk-icon="upload" class="uk-margin-small-right"></span>Import collections</button>
+									</div>
                 </form>
               </div>
               <div class="uk-card uk-card-body fp-card">
@@ -702,18 +956,22 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <label class="uk-form-label" for="inject-section">Inject target library</label>
                   <select class="uk-select" id="inject-section"></select>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="inject-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="plus" class="uk-margin-small-right"></span>Inject configured collections</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-primary" type="submit"><span uk-icon="plus" class="uk-margin-small-right"></span>Inject configured collections</button>
+									</div>
                 </form>
                 <form id="dupes-form" class="uk-margin-small-bottom">
                   <label class="uk-form-label" for="dupes-section">Duplicates library</label>
                   <select class="uk-select" id="dupes-section"></select>
-									<button class="uk-button uk-button-secondary uk-margin-top" type="submit"><span uk-icon="search" class="uk-margin-small-right"></span>Audit duplicates</button>
+									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="search" class="uk-margin-small-right"></span>Audit duplicates</button>
                 </form>
                 <form id="delete-non-smart-form" class="uk-margin-small-bottom">
                   <label class="uk-form-label" for="delete-non-smart-section">Delete non-smart library</label>
                   <select class="uk-select" id="delete-non-smart-section"></select>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="delete-non-smart-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-danger uk-margin-top" type="submit"><span uk-icon="trash" class="uk-margin-small-right"></span>Delete non-smart collections</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-danger" type="submit"><span uk-icon="trash" class="uk-margin-small-right"></span>Delete non-smart collections</button>
+									</div>
                 </form>
               </div>
               <div class="uk-card uk-card-body fp-card">
@@ -724,7 +982,9 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <label class="uk-form-label uk-margin-small-top" for="path-clean-collection">Collection</label>
                   <select class="uk-select" id="path-clean-collection"></select>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="path-clean-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Path clean collection</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-primary" type="submit"><span uk-icon="play" class="uk-margin-small-right"></span>Path clean collection</button>
+									</div>
                 </form>
               </div>
             </div>
@@ -745,7 +1005,9 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <label class="uk-form-label" for="restore-file">Backup filter</label>
                   <input class="uk-input" id="restore-file" type="text" placeholder="20260704 or frantic-postr-backup-host">
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="restore-trail" type="checkbox"> Dry run only</label>
-									<button class="uk-button uk-button-primary uk-margin-top" type="submit"><span uk-icon="history" class="uk-margin-small-right"></span>Restore backup</button>
+									<div class="fp-action-row uk-margin-small-top">
+										<button class="uk-button uk-button-primary" type="submit"><span uk-icon="history" class="uk-margin-small-right"></span>Restore backup</button>
+									</div>
                 </form>
               </div>
               <div class="uk-card uk-card-body fp-card">
@@ -765,7 +1027,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 					<h2 class="fp-section-title">Operation progress</h2>
 					<p class="fp-muted uk-margin-small-top">Progress stays visible while you switch tabs, useful for remote and Docker-based runs.</p>
 				</div>
-				<div class="uk-flex uk-flex-wrap uk-gap-small uk-flex-middle">
+				<div class="uk-flex uk-flex-wrap uk-gap-small uk-flex-middle fp-button-group">
 					<button class="uk-button uk-button-danger uk-button-small" id="stop-action" type="button" disabled><span uk-icon="ban" class="uk-margin-small-right"></span>Stop active process</button>
 					<button class="uk-button uk-button-secondary uk-button-small" id="download-output" type="button" disabled>Download output file</button>
 					<span class="fp-chip" id="config-status-chip">Loading runtime status…</span>
@@ -786,12 +1048,43 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 				<a class="uk-accordion-title" href="#"><span uk-icon="file-text" class="uk-margin-small-right"></span>Operation log</a>
 				<div class="uk-accordion-content">
 					<p class="fp-muted uk-margin-small-top">Action output is always available here, no matter which tab is active.</p>
-					<pre id="action-log" class="fp-log uk-margin-top">No action has been run yet.</pre>
+					<div class="fp-log-wrap uk-margin-top">
+						<button class="uk-button uk-button-default uk-button-small fp-copy-log" id="copy-log" type="button"><span uk-icon="copy" class="uk-margin-small-right"></span>Copy</button>
+						<pre id="action-log" class="fp-log">No action has been run yet.</pre>
+					</div>
 				</div>
 			</li>
 		</ul>
 	</div>
   </div>
+
+	<div id="config-editor-modal" uk-modal>
+		<div class="uk-modal-dialog uk-modal-body fp-card">
+			<button class="uk-modal-close-default" type="button" uk-close></button>
+			<h3 id="config-editor-title" class="fp-section-title">Edit config</h3>
+			<p id="config-editor-path" class="fp-muted uk-margin-small-top"></p>
+			<div id="config-editor-mode-switch" class="fp-editor-mode-switch" hidden>
+				<button class="uk-button uk-button-small uk-button-primary" id="config-editor-mode-structured" type="button">Structured</button>
+				<button class="uk-button uk-button-small uk-button-default" id="config-editor-mode-raw" type="button">Raw text</button>
+			</div>
+			<div id="config-editor-list-mode" hidden>
+				<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle uk-margin-small-bottom">
+					<input id="config-editor-item-input" class="uk-input" type="text" placeholder="Add new entry" style="min-width: 280px;">
+					<button class="uk-button uk-button-primary" id="config-editor-add-item" type="button"><span uk-icon="plus" class="uk-margin-small-right"></span>Add</button>
+				</div>
+				<div id="config-editor-list" class="fp-config-list"></div>
+			</div>
+			<div id="config-editor-structured" class="fp-config-structured" hidden></div>
+			<textarea id="config-editor-text" class="uk-textarea" rows="14" style="font-family: 'IBM Plex Mono', monospace;"></textarea>
+			<div class="uk-flex uk-flex-between uk-flex-middle uk-flex-wrap uk-margin-top uk-gap-small">
+				<span id="config-editor-hint" class="fp-footer-note">Edit and save.</span>
+				<div class="uk-flex uk-gap-small uk-flex-wrap">
+					<button class="uk-button uk-button-default" id="config-editor-reload" type="button">Reload</button>
+					<button class="uk-button uk-button-primary" id="config-editor-save" type="button"><span uk-icon="check" class="uk-margin-small-right"></span>Save changes</button>
+				</div>
+			</div>
+		</div>
+	</div>
 
   <div id="about-modal" uk-modal>
     <div class="uk-modal-dialog uk-modal-body fp-card">
@@ -819,6 +1112,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		sections: [],
 		backups: [],
 		defaults: {},
+		templateFiles: [],
 		plexTestResetTimer: null,
 		actionPollTimer: null,
 		actionPollBusy: false,
@@ -828,7 +1122,16 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		lastDownloadToken: '',
 		runtimeStatusToastShown: false,
 		lastParsedLogText: '',
-		seenToastLogLines: {}
+		seenToastLogLines: {},
+		configEditorScope: '',
+		configEditorTitle: '',
+		configEditorItems: [],
+		statsExcludeWordsItems: [],
+		cleanReplacementItems: [],
+		configEditorRawContent: '',
+		configEditorStructuredContent: '',
+		configEditorMode: 'structured',
+		configEditorStructuredReady: false
 	};
 
     const sectionSelectIds = [
@@ -865,9 +1168,29 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			});
 		}
 
-    function setLog(text) {
-      document.getElementById('action-log').textContent = text || 'No output returned.';
-    }
+		function setPasswordVisible(inputId, visible, button) {
+			const input = document.getElementById(inputId);
+			if (!input || !button) {
+				return;
+			}
+			input.type = visible ? 'text' : 'password';
+			button.innerHTML = '<span uk-icon="' + (visible ? 'eye-slash' : 'eye') + '" class="uk-margin-small-right"></span>' + (visible ? 'Hide' : 'Show');
+			if (typeof UIkit !== 'undefined' && UIkit.icon) {
+				UIkit.icon(button.querySelector('[uk-icon]'));
+			}
+		}
+
+		function sanitizeLogText(text) {
+			const raw = text || '';
+			const withoutAnsi = raw
+				.replace(/\u001b\[[0-9;]*[ -\/]*[@-~]/g, '')
+				.replace(/\u001b\][^\u0007]*(\u0007|\u001b\\)/g, '');
+			return withoutAnsi.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+		}
+
+		function setLog(text) {
+		  document.getElementById('action-log').textContent = sanitizeLogText(text || 'No output returned.');
+		}
 
 		function updateProgress(status) {
 			const label = document.getElementById('progress-label');
@@ -1006,22 +1329,761 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			accordion.toggle(0, true);
 		}
 
-		function moveConfigTabLast() {
+		function configEditorLabel(scope) {
+			switch (scope) {
+			case 'type-collections':
+				return 'Type collections list';
+			case 'studio-collections':
+				return 'Studio collections list';
+			case 'admin-collections':
+				return 'Admin collections list';
+			case 'label-config':
+				return 'Label config';
+			case 'collection-config':
+				return 'Collection config';
+			default:
+				return 'Config';
+			}
+		}
+
+		function isCollectionListEditorScope(scope) {
+			return scope === 'type-collections' || scope === 'studio-collections' || scope === 'admin-collections';
+		}
+
+		function isStructuredConfigScope(scope) {
+			return scope === 'label-config' || scope === 'collection-config';
+		}
+
+		function reorderTabsAndActivatePosters() {
 			const tabList = document.querySelector('ul[uk-tab]');
-			if (!tabList || !tabList.children || tabList.children.length < 2) {
+			const switcher = document.querySelector('ul.uk-switcher');
+			if (!tabList || !switcher || tabList.children.length !== switcher.children.length) {
 				return;
 			}
-			const switcher = tabList.nextElementSibling;
-			if (!switcher || !switcher.classList || !switcher.classList.contains('uk-switcher') || switcher.children.length < 2) {
+			const tabs = Array.from(tabList.children);
+			const panels = Array.from(switcher.children);
+			const pairs = tabs.map((tab, idx) => ({ tab: tab, panel: panels[idx], label: ((tab.textContent || '').trim()).toLowerCase() }));
+			const findPair = (name) => pairs.find((pair) => pair.label.includes(name));
+			const configPair = findPair('config');
+			const runtimePair = findPair('runtime');
+			const postersPair = findPair('posters');
+			const ordered = [];
+			pairs.forEach((pair) => {
+				if (pair !== configPair && pair !== runtimePair) {
+					ordered.push(pair);
+				}
+			});
+			if (configPair) {
+				ordered.push(configPair);
+			}
+			if (runtimePair) {
+				ordered.push(runtimePair);
+			}
+			ordered.forEach((pair) => {
+				tabList.appendChild(pair.tab);
+				switcher.appendChild(pair.panel);
+			});
+			if (typeof UIkit !== 'undefined' && UIkit.switcher && postersPair) {
+				const activeIndex = ordered.findIndex((pair) => pair === postersPair);
+				if (activeIndex >= 0) {
+					const switcherApi = UIkit.switcher(switcher);
+					if (switcherApi) {
+						switcherApi.show(activeIndex);
+					}
+				}
+			}
+		}
+
+		function updateGlobalSaveButtonVisibility() {
+			const button = document.getElementById('save-config-global');
+			const configForm = document.getElementById('config-form');
+			if (!button || !configForm) {
 				return;
 			}
-			const firstTab = tabList.children[0];
-			const firstPanel = switcher.children[0];
-			if (!firstTab || !firstPanel) {
+			const configPanel = configForm.closest('li');
+			const visible = !!(configPanel && configPanel.classList.contains('uk-active'));
+			button.style.display = visible ? '' : 'none';
+		}
+
+		function applyActionRowLayout() {
+			document.querySelectorAll('.fp-card .uk-flex').forEach((row) => {
+				if (row.classList.contains('fp-button-group') || row.classList.contains('fp-action-row')) {
+					return;
+				}
+				const directButtons = Array.from(row.children).filter((child) => child.classList && child.classList.contains('uk-button'));
+				if (!directButtons.length) {
+					return;
+				}
+				if (directButtons.length > 1) {
+					row.classList.add('fp-button-group');
+					return;
+				}
+				const hasInputOrSelect = Array.from(row.children).some((child) => {
+					if (!(child instanceof HTMLElement)) {
+						return false;
+					}
+					if (child.matches('input,select,textarea')) {
+						return true;
+					}
+					return !!child.querySelector('input,select,textarea,.uk-input,.uk-select,.uk-textarea');
+				});
+				if (hasInputOrSelect) {
+					row.classList.add('fp-action-row');
+				}
+			});
+		}
+
+		function normalizeStatsWords(raw) {
+			const parts = (raw || '').split(/[\n,\t\r]+/).map((part) => (part || '').trim()).filter((part) => !!part);
+			const seen = {};
+			const out = [];
+			parts.forEach((part) => {
+				const key = part.toLowerCase();
+				if (seen[key]) {
+					return;
+				}
+				seen[key] = true;
+				out.push(part);
+			});
+			return out;
+		}
+
+		function syncStatsWordsTextarea() {
+			document.getElementById('stats-exclude-words').value = state.statsExcludeWordsItems.join(', ');
+		}
+
+		function renderStatsWordsChips() {
+			const root = document.getElementById('stats-words-chip-list');
+			if (!root) {
 				return;
 			}
-			tabList.appendChild(firstTab);
-			switcher.appendChild(firstPanel);
+			root.innerHTML = '';
+			if (!state.statsExcludeWordsItems.length) {
+				const empty = document.createElement('span');
+				empty.className = 'fp-footer-note';
+				empty.textContent = 'No excluded words added yet.';
+				root.appendChild(empty);
+				return;
+			}
+			state.statsExcludeWordsItems.forEach((word, index) => {
+				const chip = document.createElement('div');
+				chip.className = 'fp-inline-chip';
+				chip.textContent = word;
+				const remove = document.createElement('button');
+				remove.type = 'button';
+				remove.textContent = 'x';
+				remove.addEventListener('click', () => {
+					state.statsExcludeWordsItems.splice(index, 1);
+					syncStatsWordsTextarea();
+					renderStatsWordsChips();
+				});
+				chip.appendChild(remove);
+				root.appendChild(chip);
+			});
+		}
+
+		function addStatsWord(value) {
+			const word = (value || '').trim();
+			if (!word) {
+				return;
+			}
+			const key = word.toLowerCase();
+			if (state.statsExcludeWordsItems.some((existing) => existing.toLowerCase() === key)) {
+				showToast('warning', 'Word already exists.', 2500);
+				return;
+			}
+			state.statsExcludeWordsItems.push(word);
+			syncStatsWordsTextarea();
+			renderStatsWordsChips();
+		}
+
+		function parseCleanReplacementsRaw(raw) {
+			const lines = (raw || '').split('\n');
+			const out = [];
+			lines.forEach((line) => {
+				const trimmed = (line || '').trim();
+				if (!trimmed) {
+					return;
+				}
+				const parts = trimmed.split('=');
+				if (parts.length < 2) {
+					return;
+				}
+				const from = (parts.shift() || '').trim();
+				const to = parts.join('=').trim();
+				if (!from) {
+					return;
+				}
+				out.push({ from: from, to: to });
+			});
+			return out;
+		}
+
+		function syncCleanReplacementsTextarea() {
+			const lines = state.cleanReplacementItems.map((item) => item.from + ' = ' + item.to);
+			document.getElementById('clean-replacements').value = lines.join('\n');
+		}
+
+		function renderCleanReplacementsList() {
+			const root = document.getElementById('clean-repl-list');
+			if (!root) {
+				return;
+			}
+			root.innerHTML = '';
+			if (!state.cleanReplacementItems.length) {
+				const empty = document.createElement('div');
+				empty.className = 'fp-config-list-empty';
+				empty.textContent = 'No replacements added yet.';
+				root.appendChild(empty);
+				return;
+			}
+			state.cleanReplacementItems.forEach((item, index) => {
+				const row = document.createElement('div');
+				row.className = 'fp-config-list-row';
+				const value = document.createElement('div');
+				value.className = 'fp-config-list-value';
+				value.textContent = item.from + ' => ' + item.to;
+				const remove = document.createElement('button');
+				remove.type = 'button';
+				remove.className = 'uk-button uk-button-danger uk-button-small';
+				remove.textContent = 'Remove';
+				remove.addEventListener('click', () => {
+					state.cleanReplacementItems.splice(index, 1);
+					syncCleanReplacementsTextarea();
+					renderCleanReplacementsList();
+				});
+				row.appendChild(value);
+				row.appendChild(remove);
+				root.appendChild(row);
+			});
+		}
+
+		function addCleanReplacement(fromValue, toValue) {
+			const from = (fromValue || '').trim();
+			const to = (toValue || '').trim();
+			if (!from) {
+				showToast('warning', 'Find text is required.', 2500);
+				return;
+			}
+			const duplicate = state.cleanReplacementItems.some((item) => item.from.toLowerCase() === from.toLowerCase());
+			if (duplicate) {
+				showToast('warning', 'Replacement for that key already exists.', 2500);
+				return;
+			}
+			state.cleanReplacementItems.push({ from: from, to: to });
+			syncCleanReplacementsTextarea();
+			renderCleanReplacementsList();
+		}
+
+		function structuredRowsFromLabelConfig(obj) {
+			const rows = [];
+			const list = obj && obj.label && Array.isArray(obj.label.lookup) ? obj.label.lookup : [];
+			list.forEach((item) => {
+				rows.push({
+					title_contains: item.title_contains || '',
+					title_contains_any: Array.isArray(item.title_contains_any) ? item.title_contains_any.join(', ') : '',
+					find: item.find || '',
+					labels: Array.isArray(item.labels) ? item.labels.join(', ') : '',
+					categories: Array.isArray(item.categories) ? item.categories.join(', ') : '',
+					update_category: !!item.update_category,
+					only_category: !!item.only_category
+				});
+			});
+			return rows;
+		}
+
+		function structuredRowsFromCollectionConfig(obj) {
+			const rows = [];
+			const list = obj && obj.collection && Array.isArray(obj.collection.lookup) ? obj.collection.lookup : [];
+			list.forEach((item) => {
+				rows.push({
+					title: item.title || '',
+					smart: !!item.smart,
+					content: item.content || ''
+				});
+			});
+			return rows;
+		}
+
+		function parseCsvList(raw) {
+			return (raw || '').split(',').map((x) => x.trim()).filter((x) => !!x);
+		}
+
+		function renderStructuredConfigEditor() {
+			const root = document.getElementById('config-editor-structured');
+			if (!root) {
+				return;
+			}
+			root.innerHTML = '';
+			if (!isStructuredConfigScope(state.configEditorScope)) {
+				return;
+			}
+			if (!state.configEditorStructuredReady) {
+				const warning = document.createElement('div');
+				warning.className = 'fp-config-list-empty';
+				warning.textContent = 'Unable to parse structured view. Use Raw text mode.';
+				root.appendChild(warning);
+				return;
+			}
+			if (state.configEditorScope === 'label-config') {
+				renderLabelStructuredEditor(root);
+				return;
+			}
+			renderCollectionStructuredEditor(root);
+		}
+
+		function renderLabelStructuredEditor(root) {
+			const list = state.configEditorStructuredContent;
+			const rows = structuredRowsFromLabelConfig(list);
+			const addButton = document.createElement('button');
+			addButton.type = 'button';
+			addButton.className = 'uk-button uk-button-secondary uk-button-small';
+			addButton.textContent = 'Add lookup';
+			addButton.addEventListener('click', () => {
+				if (!list.label) {
+					list.label = {};
+				}
+				if (!Array.isArray(list.label.lookup)) {
+					list.label.lookup = [];
+				}
+				list.label.lookup.push({
+					title_contains: '',
+					title_contains_any: [],
+					find: '',
+					labels: [],
+					categories: [],
+					update_category: false,
+					only_category: false
+				});
+				renderStructuredConfigEditor();
+			});
+			root.appendChild(addButton);
+			if (!rows.length) {
+				const empty = document.createElement('div');
+				empty.className = 'fp-config-list-empty';
+				empty.textContent = 'No lookups configured yet.';
+				root.appendChild(empty);
+				return;
+			}
+			list.label.lookup.forEach((item, index) => {
+				const card = document.createElement('div');
+				card.className = 'fp-lookup-card';
+				card.innerHTML = '<div class="uk-grid-small" uk-grid>' +
+					'<div class="uk-width-1-2"><label class="uk-form-label">Title contains</label><input class="uk-input" data-k="title_contains" type="text"></div>' +
+					'<div class="uk-width-1-2"><label class="uk-form-label">Find</label><input class="uk-input" data-k="find" type="text"></div>' +
+					'<div class="uk-width-1-1"><label class="uk-form-label">Title contains any (comma)</label><input class="uk-input" data-k="title_contains_any" type="text"></div>' +
+					'<div class="uk-width-1-2"><label class="uk-form-label">Labels (comma)</label><input class="uk-input" data-k="labels" type="text"></div>' +
+					'<div class="uk-width-1-2"><label class="uk-form-label">Categories (comma)</label><input class="uk-input" data-k="categories" type="text"></div>' +
+					'<div class="uk-width-1-1 uk-flex uk-gap-small uk-flex-wrap uk-flex-middle"><label><input class="uk-checkbox" data-k="update_category" type="checkbox"> Update category</label><label><input class="uk-checkbox" data-k="only_category" type="checkbox"> Only category</label><button type="button" class="uk-button uk-button-danger uk-button-small" data-k="remove">Remove</button></div>' +
+					'</div>';
+				card.querySelector('[data-k="title_contains"]').value = item.title_contains || '';
+				card.querySelector('[data-k="find"]').value = item.find || '';
+				card.querySelector('[data-k="title_contains_any"]').value = Array.isArray(item.title_contains_any) ? item.title_contains_any.join(', ') : '';
+				card.querySelector('[data-k="labels"]').value = Array.isArray(item.labels) ? item.labels.join(', ') : '';
+				card.querySelector('[data-k="categories"]').value = Array.isArray(item.categories) ? item.categories.join(', ') : '';
+				card.querySelector('[data-k="update_category"]').checked = !!item.update_category;
+				card.querySelector('[data-k="only_category"]').checked = !!item.only_category;
+				card.querySelectorAll('input').forEach((input) => {
+					input.addEventListener('input', () => {
+						item.title_contains = card.querySelector('[data-k="title_contains"]').value;
+						item.find = card.querySelector('[data-k="find"]').value;
+						item.title_contains_any = parseCsvList(card.querySelector('[data-k="title_contains_any"]').value);
+						item.labels = parseCsvList(card.querySelector('[data-k="labels"]').value);
+						item.categories = parseCsvList(card.querySelector('[data-k="categories"]').value);
+						item.update_category = card.querySelector('[data-k="update_category"]').checked;
+						item.only_category = card.querySelector('[data-k="only_category"]').checked;
+					});
+				});
+				card.querySelector('[data-k="remove"]').addEventListener('click', () => {
+					list.label.lookup.splice(index, 1);
+					renderStructuredConfigEditor();
+				});
+				root.appendChild(card);
+			});
+		}
+
+		function renderCollectionStructuredEditor(root) {
+			const list = state.configEditorStructuredContent;
+			const rows = structuredRowsFromCollectionConfig(list);
+			const addButton = document.createElement('button');
+			addButton.type = 'button';
+			addButton.className = 'uk-button uk-button-secondary uk-button-small';
+			addButton.textContent = 'Add collection rule';
+			addButton.addEventListener('click', () => {
+				if (!list.collection) {
+					list.collection = {};
+				}
+				if (!Array.isArray(list.collection.lookup)) {
+					list.collection.lookup = [];
+				}
+				list.collection.lookup.push({ title: '', smart: true, content: '' });
+				renderStructuredConfigEditor();
+			});
+			root.appendChild(addButton);
+			if (!rows.length) {
+				const empty = document.createElement('div');
+				empty.className = 'fp-config-list-empty';
+				empty.textContent = 'No collection lookup rules configured yet.';
+				root.appendChild(empty);
+				return;
+			}
+			list.collection.lookup.forEach((item, index) => {
+				const card = document.createElement('div');
+				card.className = 'fp-lookup-card';
+				card.innerHTML = '<div class="uk-grid-small" uk-grid>' +
+					'<div class="uk-width-2-3"><label class="uk-form-label">Title</label><input class="uk-input" data-k="title" type="text"></div>' +
+					'<div class="uk-width-1-3 uk-flex uk-flex-middle"><label><input class="uk-checkbox" data-k="smart" type="checkbox"> Smart collection</label></div>' +
+					'<div class="uk-width-1-1"><label class="uk-form-label">Content query</label><textarea class="uk-textarea" rows="3" data-k="content"></textarea></div>' +
+					'<div class="uk-width-1-1"><button type="button" class="uk-button uk-button-danger uk-button-small" data-k="remove">Remove</button></div>' +
+					'</div>';
+				card.querySelector('[data-k="title"]').value = item.title || '';
+				card.querySelector('[data-k="smart"]').checked = !!item.smart;
+				card.querySelector('[data-k="content"]').value = item.content || '';
+				card.querySelectorAll('input,textarea').forEach((input) => {
+					input.addEventListener('input', () => {
+						item.title = card.querySelector('[data-k="title"]').value;
+						item.smart = card.querySelector('[data-k="smart"]').checked;
+						item.content = card.querySelector('[data-k="content"]').value;
+					});
+				});
+				card.querySelector('[data-k="remove"]').addEventListener('click', () => {
+					list.collection.lookup.splice(index, 1);
+					renderStructuredConfigEditor();
+				});
+				root.appendChild(card);
+			});
+		}
+
+		function syncStructuredRawTextFromObject() {
+			if (!isStructuredConfigScope(state.configEditorScope)) {
+				return;
+			}
+			const source = state.configEditorStructuredContent || {};
+			const lines = [];
+			if (state.configEditorScope === 'label-config') {
+				const lookups = source.label && Array.isArray(source.label.lookup) ? source.label.lookup : [];
+				lookups.forEach((entry, idx) => {
+					if (idx > 0) {
+						lines.push('');
+					}
+					lines.push('[[label.lookup]]');
+					if (entry.title_contains) {
+						lines.push('title_contains = ' + JSON.stringify(entry.title_contains));
+					}
+					if (Array.isArray(entry.title_contains_any) && entry.title_contains_any.length) {
+						lines.push('title_contains_any = [' + entry.title_contains_any.map((item) => JSON.stringify(item)).join(', ') + ']');
+					}
+					if (entry.find) {
+						lines.push('find = ' + JSON.stringify(entry.find));
+					}
+					if (Array.isArray(entry.labels) && entry.labels.length) {
+						lines.push('labels = [' + entry.labels.map((item) => JSON.stringify(item)).join(', ') + ']');
+					}
+					if (Array.isArray(entry.categories) && entry.categories.length) {
+						lines.push('categories = [' + entry.categories.map((item) => JSON.stringify(item)).join(', ') + ']');
+					}
+					lines.push('update_category = ' + (entry.update_category ? 'true' : 'false'));
+					lines.push('only_category = ' + (entry.only_category ? 'true' : 'false'));
+				});
+			} else {
+				if (source.base_uri) {
+					lines.push('base_uri = ' + JSON.stringify(source.base_uri));
+					lines.push('');
+				}
+				const lookups = source.collection && Array.isArray(source.collection.lookup) ? source.collection.lookup : [];
+				lookups.forEach((entry, idx) => {
+					if (idx > 0) {
+						lines.push('');
+					}
+					lines.push('[[collection.lookup]]');
+					lines.push('title = ' + JSON.stringify(entry.title || ''));
+					lines.push('smart = ' + (entry.smart ? 'true' : 'false'));
+					lines.push('content = ' + JSON.stringify(entry.content || ''));
+				});
+			}
+			state.configEditorRawContent = lines.join('\n');
+			document.getElementById('config-editor-text').value = state.configEditorRawContent;
+		}
+
+		function applyConfigEditorMode(mode) {
+			const nextMode = mode === 'raw' ? 'raw' : 'structured';
+			state.configEditorMode = nextMode;
+			const listMode = document.getElementById('config-editor-list-mode');
+			const structured = document.getElementById('config-editor-structured');
+			const textarea = document.getElementById('config-editor-text');
+			const modeSwitch = document.getElementById('config-editor-mode-switch');
+			const structuredBtn = document.getElementById('config-editor-mode-structured');
+			const rawBtn = document.getElementById('config-editor-mode-raw');
+			const listScope = isCollectionListEditorScope(state.configEditorScope);
+			const structuredScope = isStructuredConfigScope(state.configEditorScope);
+			if (listScope) {
+				modeSwitch.hidden = true;
+				listMode.hidden = false;
+				structured.hidden = true;
+				textarea.hidden = true;
+				return;
+			}
+			if (structuredScope) {
+				modeSwitch.hidden = false;
+				listMode.hidden = true;
+				structured.hidden = nextMode !== 'structured';
+				textarea.hidden = nextMode !== 'raw';
+				structuredBtn.className = 'uk-button uk-button-small ' + (nextMode === 'structured' ? 'uk-button-primary' : 'uk-button-default');
+				rawBtn.className = 'uk-button uk-button-small ' + (nextMode === 'raw' ? 'uk-button-primary' : 'uk-button-default');
+				if (nextMode === 'structured') {
+					renderStructuredConfigEditor();
+				} else {
+					document.getElementById('config-editor-text').value = state.configEditorRawContent || '';
+				}
+				return;
+			}
+			modeSwitch.hidden = true;
+			listMode.hidden = true;
+			structured.hidden = true;
+			textarea.hidden = false;
+		}
+
+		function parseCollectionListContent(text) {
+			return (text || '')
+				.split('\n')
+				.map((line) => (line || '').trim())
+				.filter((line) => !!line);
+		}
+
+		function renderConfigEditorList() {
+			const listRoot = document.getElementById('config-editor-list');
+			if (!listRoot) {
+				return;
+			}
+			listRoot.innerHTML = '';
+			if (!state.configEditorItems.length) {
+				const empty = document.createElement('div');
+				empty.className = 'fp-config-list-empty';
+				empty.textContent = 'No entries yet. Add one above.';
+				listRoot.appendChild(empty);
+				return;
+			}
+			state.configEditorItems.forEach((item, index) => {
+				const row = document.createElement('div');
+				row.className = 'fp-config-list-row';
+				const value = document.createElement('div');
+				value.className = 'fp-config-list-value';
+				value.textContent = item;
+				const remove = document.createElement('button');
+				remove.type = 'button';
+				remove.className = 'uk-button uk-button-danger uk-button-small';
+				remove.textContent = 'Remove';
+				remove.addEventListener('click', () => {
+					state.configEditorItems.splice(index, 1);
+					renderConfigEditorList();
+				});
+				row.appendChild(value);
+				row.appendChild(remove);
+				listRoot.appendChild(row);
+			});
+		}
+
+		function addConfigEditorItem(rawValue) {
+			const value = (rawValue || '').trim();
+			if (!value) {
+				return;
+			}
+			const exists = state.configEditorItems.some((item) => item.toLowerCase() === value.toLowerCase());
+			if (exists) {
+				showToast('warning', 'Entry already exists.', 2500);
+				return;
+			}
+			state.configEditorItems.push(value);
+			renderConfigEditorList();
+		}
+
+		function applyConfigEditorModeForScope(scope, content) {
+			const listMode = document.getElementById('config-editor-list-mode');
+			const structured = document.getElementById('config-editor-structured');
+			const modeSwitch = document.getElementById('config-editor-mode-switch');
+			const textarea = document.getElementById('config-editor-text');
+			const input = document.getElementById('config-editor-item-input');
+			if (!listMode || !structured || !modeSwitch || !textarea || !input) {
+				return;
+			}
+			state.configEditorRawContent = content || '';
+			state.configEditorStructuredReady = false;
+			state.configEditorStructuredContent = '';
+			if (isCollectionListEditorScope(scope)) {
+				state.configEditorItems = parseCollectionListContent(content);
+				modeSwitch.hidden = true;
+				listMode.hidden = false;
+				structured.hidden = true;
+				textarea.hidden = true;
+				textarea.value = '';
+				input.value = '';
+				renderConfigEditorList();
+				return;
+			}
+			if (isStructuredConfigScope(scope)) {
+				try {
+					state.configEditorStructuredContent = JSON.parse(content || '{}');
+					state.configEditorStructuredReady = true;
+				} catch (error) {
+					state.configEditorStructuredContent = {};
+					state.configEditorStructuredReady = false;
+				}
+				syncStructuredRawTextFromObject();
+				applyConfigEditorMode('structured');
+				return;
+			}
+			state.configEditorItems = [];
+			modeSwitch.hidden = true;
+			listMode.hidden = true;
+			structured.hidden = true;
+			textarea.hidden = false;
+			textarea.value = content || '';
+		}
+
+		function buildConfigEditorContentForSave() {
+			if (isCollectionListEditorScope(state.configEditorScope)) {
+				return state.configEditorItems.join('\n');
+			}
+			if (isStructuredConfigScope(state.configEditorScope)) {
+				if (state.configEditorMode === 'raw') {
+					return document.getElementById('config-editor-text').value;
+				}
+				syncStructuredRawTextFromObject();
+				return state.configEditorRawContent;
+			}
+			return document.getElementById('config-editor-text').value;
+		}
+
+		function syncTemplateSelection(selectEl) {
+			if (!selectEl) {
+				return;
+			}
+			const manager = selectEl.closest('.fp-template-manager');
+			if (!manager) {
+				return;
+			}
+			const targetId = manager.dataset.targetInput;
+			const hidden = document.getElementById(targetId);
+			if (!hidden) {
+				return;
+			}
+			hidden.value = selectEl.value || '';
+		}
+
+		function ensureTemplateSelectOption(selectEl, value) {
+			if (!selectEl || !value) {
+				return;
+			}
+			const existing = Array.from(selectEl.options).find((option) => option.value === value);
+			if (!existing) {
+				const option = document.createElement('option');
+				option.value = value;
+				option.textContent = value;
+				selectEl.appendChild(option);
+			}
+		}
+
+		function populateTemplateSelects() {
+			const items = Array.isArray(state.templateFiles) ? state.templateFiles : [];
+			document.querySelectorAll('.fp-template-manager').forEach((manager) => {
+				const selectEl = manager.querySelector('.fp-template-select');
+				if (!selectEl) {
+					return;
+				}
+				const targetId = manager.dataset.targetInput;
+				const hidden = document.getElementById(targetId);
+				const currentValue = hidden ? (hidden.value || '') : '';
+				selectEl.innerHTML = '';
+				items.forEach((item) => {
+					const option = document.createElement('option');
+					option.value = item.value || item.name || '';
+					option.textContent = item.name || item.value || 'template image';
+					selectEl.appendChild(option);
+				});
+				if (!items.length) {
+					const option = document.createElement('option');
+					option.value = currentValue;
+					option.textContent = currentValue || 'No uploaded template images found';
+					selectEl.appendChild(option);
+				}
+				if (currentValue) {
+					ensureTemplateSelectOption(selectEl, currentValue);
+					selectEl.value = currentValue;
+				}
+				syncTemplateSelection(selectEl);
+			});
+		}
+
+		async function refreshTemplateFiles() {
+			const response = await fetch('/api/files/list?scope=template-images');
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload.error || 'Failed to load template images');
+			}
+			state.templateFiles = payload.files || [];
+			populateTemplateSelects();
+		}
+
+		async function uploadTemplateImageFromManager(manager) {
+			if (!manager) {
+				throw new Error('Template upload control is unavailable.');
+			}
+			const uploadInput = manager.querySelector('.fp-template-upload');
+			if (!uploadInput || !uploadInput.files || !uploadInput.files.length) {
+				throw new Error('Choose an image file first.');
+			}
+			const file = uploadInput.files[0];
+			const formData = new FormData();
+			formData.append('file', file);
+			const response = await fetch('/api/files/upload?scope=template-images', {
+				method: 'POST',
+				body: formData
+			});
+			const payload = await response.json();
+			if (!response.ok || !payload.ok) {
+				throw new Error(payload.error || 'Template image upload failed');
+			}
+			state.templateFiles = payload.files || [];
+			populateTemplateSelects();
+			const selectEl = manager.querySelector('.fp-template-select');
+			if (selectEl && payload.value) {
+				ensureTemplateSelectOption(selectEl, payload.value);
+				selectEl.value = payload.value;
+				syncTemplateSelection(selectEl);
+			}
+			uploadInput.value = '';
+			return payload;
+		}
+
+		async function openConfigEditor(scope) {
+			const response = await fetch('/api/config/content?scope=' + encodeURIComponent(scope));
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload.error || 'Failed to load config content');
+			}
+			state.configEditorScope = scope;
+			state.configEditorTitle = configEditorLabel(scope);
+			document.getElementById('config-editor-title').textContent = state.configEditorTitle;
+			document.getElementById('config-editor-path').textContent = payload.path || '';
+			applyConfigEditorModeForScope(scope, payload.content || '');
+			document.getElementById('config-editor-hint').textContent = 'Edit and save.';
+			if (typeof UIkit !== 'undefined' && UIkit.modal) {
+				UIkit.modal('#config-editor-modal').show();
+			}
+		}
+
+		async function saveConfigEditorContent() {
+			if (!state.configEditorScope) {
+				throw new Error('No config editor scope is selected.');
+			}
+			const body = {
+				scope: state.configEditorScope,
+				content: buildConfigEditorContentForSave()
+			};
+			const result = await postJSON('/api/config/content?scope=' + encodeURIComponent(state.configEditorScope), body);
+			document.getElementById('config-editor-hint').textContent = result.message || 'Saved.';
+			showToast('success', result.message || (state.configEditorTitle + ' saved.'), 3500);
+			await refreshState();
 		}
 
 		function setImportFileOptions(files, preferredValue) {
@@ -1292,6 +2354,10 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 	document.getElementById('translate-to-english').checked = !!payload.general.translate_to_english;
 	document.getElementById('clean-replacements').value = payload.general.clean_replacements || '';
 	document.getElementById('stats-exclude-words').value = payload.general.stats_exclude_words || '';
+		state.cleanReplacementItems = parseCleanReplacementsRaw(payload.general.clean_replacements || '');
+		renderCleanReplacementsList();
+		state.statsExcludeWordsItems = normalizeStatsWords(payload.general.stats_exclude_words || '');
+		renderStatsWordsChips();
 	document.getElementById('backup-retention-days').value = payload.general.backup_retention_days || 0;
 	document.getElementById('font-file').value = payload.general.font_file || '';
 	document.getElementById('font-size').value = payload.general.font_size || 0;
@@ -1310,6 +2376,11 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
       document.getElementById('import-file').value = payload.defaults.import_path || '';
 		try {
 			await refreshImportFiles(payload.defaults.import_path || '');
+		} catch (error) {
+			showToast('warning', error.message, 4500);
+		}
+		try {
+			await refreshTemplateFiles();
 		} catch (error) {
 			showToast('warning', error.message, 4500);
 		}
@@ -1358,6 +2429,110 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
       return payload;
     }
 
+		function buildConfigPayload() {
+			return {
+				base_url: document.getElementById('base-url').value,
+				token: document.getElementById('token').value,
+				retries: Number(document.getElementById('retries').value),
+				workers: Number(document.getElementById('workers').value),
+				retry_base_ms: Number(document.getElementById('retry-base-ms').value),
+				retry_max_ms: Number(document.getElementById('retry-max-ms').value),
+				output_dir: document.getElementById('output-dir-input').value,
+				log_file: document.getElementById('log-file-input').value,
+				template_image: document.getElementById('template-image').value,
+				type_template_image: document.getElementById('type-template-image').value,
+				studio_template_image: document.getElementById('studio-template-image').value,
+				admin_template_image: document.getElementById('admin-template-image').value,
+				type_collections_file: document.getElementById('type-collections-file').value,
+				studio_collections_file: document.getElementById('studio-collections-file').value,
+				admin_collections_file: document.getElementById('admin-collections-file').value,
+				plex_config: document.getElementById('plex-config-file').value,
+				label_config: document.getElementById('label-config-file').value,
+				collection_config: document.getElementById('collection-config-file').value,
+				translate_to_english: document.getElementById('translate-to-english').checked,
+				translate_endpoint: document.getElementById('translate-endpoint').value,
+				translate_api_key: document.getElementById('translate-api-key').value,
+				translate_rate_limit_per_minute: Number(document.getElementById('translate-rate-limit').value),
+				clean_replacements: document.getElementById('clean-replacements').value,
+				stats_exclude_words: document.getElementById('stats-exclude-words').value,
+				backup_retention_days: Number(document.getElementById('backup-retention-days').value),
+				font_file: document.getElementById('font-file').value,
+				font_size: Number(document.getElementById('font-size').value),
+				font_color: document.getElementById('font-color').value,
+				font_shadow_color: document.getElementById('font-shadow-color').value,
+				font_shadow_offset_x: Number(document.getElementById('font-shadow-offset-x').value),
+				font_shadow_offset_y: Number(document.getElementById('font-shadow-offset-y').value),
+				font_glow_color: document.getElementById('font-glow-color').value,
+				font_glow_radius: Number(document.getElementById('font-glow-radius').value),
+				font_glow_alpha: Number(document.getElementById('font-glow-alpha').value),
+				font_y_offset: Number(document.getElementById('font-y-offset').value)
+			};
+		}
+
+		async function saveConfigPayload(options) {
+			const config = options || {};
+			const payload = buildConfigPayload();
+			const result = await postJSON('/api/config', payload);
+			if (!config.quiet) {
+				setLog(result.logs || result.message || 'Configuration updated.');
+				showBanner('ok', result.message || 'Configuration saved.');
+				showToast('success', config.successMessage || result.message || 'Configuration saved.', 3500);
+			}
+			await refreshState();
+			return result;
+		}
+
+		function buildTemplatePreviewPayload() {
+			return {
+				template_kind: document.getElementById('preview-template-kind').value,
+				sample_text: document.getElementById('preview-sample-text').value,
+				template_image: document.getElementById('template-image').value,
+				type_template_image: document.getElementById('type-template-image').value,
+				studio_template_image: document.getElementById('studio-template-image').value,
+				admin_template_image: document.getElementById('admin-template-image').value,
+				font_file: document.getElementById('font-file').value,
+				font_size: Number(document.getElementById('font-size').value),
+				font_color: document.getElementById('font-color').value,
+				font_shadow_color: document.getElementById('font-shadow-color').value,
+				font_shadow_offset_x: Number(document.getElementById('font-shadow-offset-x').value),
+				font_shadow_offset_y: Number(document.getElementById('font-shadow-offset-y').value),
+				font_glow_color: document.getElementById('font-glow-color').value,
+				font_glow_radius: Number(document.getElementById('font-glow-radius').value),
+				font_glow_alpha: Number(document.getElementById('font-glow-alpha').value),
+				font_y_offset: Number(document.getElementById('font-y-offset').value)
+			};
+		}
+
+		async function requestTemplatePreview() {
+			const button = document.getElementById('generate-template-preview');
+			const image = document.getElementById('template-preview-image');
+			const empty = document.getElementById('template-preview-empty');
+			const meta = document.getElementById('template-preview-meta');
+			button.disabled = true;
+			meta.textContent = 'Generating preview...';
+			try {
+				const response = await fetch('/api/template/preview', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(buildTemplatePreviewPayload())
+				});
+				const payload = await response.json();
+				if (!response.ok || !payload.ok) {
+					throw new Error(payload.error || 'Failed to generate preview');
+				}
+				image.src = payload.image_data_url;
+				image.style.display = 'block';
+				empty.style.display = 'none';
+				meta.textContent = 'Preview generated from ' + (payload.template_kind || 'template') + ' (' + payload.width + 'x' + payload.height + ') using ' + (payload.template_path || 'selected path');
+				showToast('success', 'Template preview generated.', 2500);
+			} catch (error) {
+				meta.textContent = error.message;
+				showToast('danger', error.message, 5000);
+			} finally {
+				button.disabled = false;
+			}
+		}
+
     async function runAction(action, payload) {
 	openOperationLogAccordion();
 	state.lastParsedLogText = '';
@@ -1381,6 +2556,171 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 
     document.getElementById('refresh-state').addEventListener('click', refreshState);
     document.getElementById('path-clean-section').addEventListener('change', loadCollectionsForPathClean);
+
+		document.querySelectorAll('[data-toggle-password]').forEach((button) => {
+			const inputId = button.getAttribute('data-toggle-password') || '';
+			setPasswordVisible(inputId, false, button);
+			button.addEventListener('click', () => {
+				const input = document.getElementById(inputId);
+				if (!input) {
+					return;
+				}
+				setPasswordVisible(inputId, input.type === 'password', button);
+			});
+		});
+
+		document.querySelectorAll('.fp-template-manager .fp-template-select').forEach((selectEl) => {
+			selectEl.addEventListener('change', async () => {
+				syncTemplateSelection(selectEl);
+				try {
+					await saveConfigPayload({ successMessage: 'Template image selection saved.' });
+				} catch (error) {
+					showToast('danger', error.message, 5000);
+				}
+			});
+		});
+
+		document.querySelectorAll('.fp-template-manager .fp-template-upload-btn').forEach((button) => {
+			button.addEventListener('click', async () => {
+				const manager = button.closest('.fp-template-manager');
+				try {
+					const payload = await uploadTemplateImageFromManager(manager);
+					await saveConfigPayload({ quiet: true });
+					showToast('success', payload.message || 'Template image uploaded and saved.', 3500);
+				} catch (error) {
+					showToast('danger', error.message, 5000);
+				}
+			});
+		});
+
+		document.querySelectorAll('[data-config-editor]').forEach((button) => {
+			button.addEventListener('click', async () => {
+				const scope = button.getAttribute('data-config-editor') || '';
+				if (!scope) {
+					return;
+				}
+				try {
+					await openConfigEditor(scope);
+				} catch (error) {
+					showToast('danger', error.message, 5000);
+				}
+			});
+		});
+
+		document.getElementById('config-editor-reload').addEventListener('click', async () => {
+			if (!state.configEditorScope) {
+				return;
+			}
+			try {
+				await openConfigEditor(state.configEditorScope);
+			} catch (error) {
+				showToast('danger', error.message, 5000);
+			}
+		});
+
+		document.getElementById('config-editor-save').addEventListener('click', async () => {
+			try {
+				await saveConfigEditorContent();
+			} catch (error) {
+				showToast('danger', error.message, 5000);
+			}
+		});
+
+		document.getElementById('config-editor-mode-structured').addEventListener('click', () => {
+			applyConfigEditorMode('structured');
+		});
+
+		document.getElementById('config-editor-mode-raw').addEventListener('click', () => {
+			if (isStructuredConfigScope(state.configEditorScope)) {
+				syncStructuredRawTextFromObject();
+			}
+			applyConfigEditorMode('raw');
+		});
+
+		document.getElementById('config-editor-add-item').addEventListener('click', () => {
+			if (!isCollectionListEditorScope(state.configEditorScope)) {
+				return;
+			}
+			const input = document.getElementById('config-editor-item-input');
+			addConfigEditorItem(input.value);
+			input.value = '';
+			input.focus();
+		});
+
+		document.getElementById('config-editor-item-input').addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter') {
+				return;
+			}
+			event.preventDefault();
+			if (!isCollectionListEditorScope(state.configEditorScope)) {
+				return;
+			}
+			const input = document.getElementById('config-editor-item-input');
+			addConfigEditorItem(input.value);
+			input.value = '';
+		});
+
+		document.getElementById('stats-word-add').addEventListener('click', () => {
+			const input = document.getElementById('stats-word-input');
+			addStatsWord(input.value);
+			input.value = '';
+			input.focus();
+		});
+
+		document.getElementById('stats-word-input').addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter') {
+				return;
+			}
+			event.preventDefault();
+			const input = document.getElementById('stats-word-input');
+			addStatsWord(input.value);
+			input.value = '';
+		});
+
+		document.getElementById('stats-exclude-words').addEventListener('input', () => {
+			state.statsExcludeWordsItems = normalizeStatsWords(document.getElementById('stats-exclude-words').value);
+			renderStatsWordsChips();
+		});
+
+		document.getElementById('clean-repl-add').addEventListener('click', () => {
+			const findInput = document.getElementById('clean-repl-find');
+			const replaceInput = document.getElementById('clean-repl-replace');
+			addCleanReplacement(findInput.value, replaceInput.value);
+			findInput.value = '';
+			replaceInput.value = '';
+			findInput.focus();
+		});
+
+		document.getElementById('clean-replacements').addEventListener('input', () => {
+			state.cleanReplacementItems = parseCleanReplacementsRaw(document.getElementById('clean-replacements').value);
+			renderCleanReplacementsList();
+		});
+
+		document.getElementById('copy-log').addEventListener('click', async () => {
+			const text = document.getElementById('action-log').textContent || '';
+			try {
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					await navigator.clipboard.writeText(text);
+				} else {
+					const temp = document.createElement('textarea');
+					temp.value = text;
+					temp.style.position = 'fixed';
+					temp.style.opacity = '0';
+					document.body.appendChild(temp);
+					temp.focus();
+					temp.select();
+					document.execCommand('copy');
+					document.body.removeChild(temp);
+				}
+				showToast('success', 'Operation log copied to clipboard.', 2500);
+			} catch (error) {
+				showToast('danger', 'Unable to copy operation log.', 4500);
+			}
+		});
+
+		document.getElementById('generate-template-preview').addEventListener('click', async () => {
+			await requestTemplatePreview();
+		});
 
 		document.getElementById('stop-action').addEventListener('click', async () => {
 			try {
@@ -1425,48 +2765,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
     document.getElementById('config-form').addEventListener('submit', async (event) => {
       event.preventDefault();
       try {
-        const payload = {
-          base_url: document.getElementById('base-url').value,
-          token: document.getElementById('token').value,
-          retries: Number(document.getElementById('retries').value),
-          workers: Number(document.getElementById('workers').value),
-          retry_base_ms: Number(document.getElementById('retry-base-ms').value),
-					retry_max_ms: Number(document.getElementById('retry-max-ms').value),
-					output_dir: document.getElementById('output-dir-input').value,
-					log_file: document.getElementById('log-file-input').value,
-					template_image: document.getElementById('template-image').value,
-					type_template_image: document.getElementById('type-template-image').value,
-					studio_template_image: document.getElementById('studio-template-image').value,
-					admin_template_image: document.getElementById('admin-template-image').value,
-					type_collections_file: document.getElementById('type-collections-file').value,
-					studio_collections_file: document.getElementById('studio-collections-file').value,
-					admin_collections_file: document.getElementById('admin-collections-file').value,
-					plex_config: document.getElementById('plex-config-file').value,
-					label_config: document.getElementById('label-config-file').value,
-					collection_config: document.getElementById('collection-config-file').value,
-					translate_to_english: document.getElementById('translate-to-english').checked,
-					translate_endpoint: document.getElementById('translate-endpoint').value,
-					translate_api_key: document.getElementById('translate-api-key').value,
-					translate_rate_limit_per_minute: Number(document.getElementById('translate-rate-limit').value),
-					clean_replacements: document.getElementById('clean-replacements').value,
-					stats_exclude_words: document.getElementById('stats-exclude-words').value,
-					backup_retention_days: Number(document.getElementById('backup-retention-days').value),
-					font_file: document.getElementById('font-file').value,
-					font_size: Number(document.getElementById('font-size').value),
-					font_color: document.getElementById('font-color').value,
-					font_shadow_color: document.getElementById('font-shadow-color').value,
-					font_shadow_offset_x: Number(document.getElementById('font-shadow-offset-x').value),
-					font_shadow_offset_y: Number(document.getElementById('font-shadow-offset-y').value),
-					font_glow_color: document.getElementById('font-glow-color').value,
-					font_glow_radius: Number(document.getElementById('font-glow-radius').value),
-					font_glow_alpha: Number(document.getElementById('font-glow-alpha').value),
-					font_y_offset: Number(document.getElementById('font-y-offset').value)
-        };
-        const result = await postJSON('/api/config', payload);
-        setLog(result.logs || result.message || 'Configuration updated.');
-        showBanner('ok', result.message || 'Configuration saved.');
-				showToast('success', result.message || 'Configuration saved.', 3500);
-        await refreshState();
+		await saveConfigPayload({ successMessage: 'Configuration saved.' });
       } catch (error) {
         setLog(error.message);
         showBanner('error', error.message);
@@ -1488,7 +2787,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 				setLog('Testing Plex connection...');
 				const result = await postJSON('/api/plex/test', payload);
 				setLog(result.logs || result.message || 'Plex connection succeeded.');
-				showBanner('ok', result.message || 'Plex connection succeeded.');
+				hideBanner();
 				setPlexTestButtonState('success');
 				showToast('success', result.message || 'Plex connection succeeded.', 4500);
 			} catch (error) {
@@ -1622,7 +2921,16 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
       runAction('rollback', {});
     });
 
-		moveConfigTabLast();
+		const mainSwitcher = document.getElementById('main-switcher');
+		if (mainSwitcher) {
+			mainSwitcher.addEventListener('shown', () => {
+				updateGlobalSaveButtonVisibility();
+			});
+		}
+
+		applyActionRowLayout();
+		reorderTabsAndActivatePosters();
+		updateGlobalSaveButtonVisibility();
 		pollActionStatus();
 		refreshState();
   </script>

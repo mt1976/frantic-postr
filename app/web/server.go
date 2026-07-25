@@ -43,12 +43,14 @@ func (s *webServer) routes() http.Handler {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/help", s.handleHelp)
 	mux.HandleFunc("/api/state", s.handleState)
+	mux.HandleFunc("/api/config/content", s.handleConfigContent)
 	mux.HandleFunc("/api/action/status", s.handleActionStatus)
 	mux.HandleFunc("/api/action/stop", s.handleActionStop)
 	mux.HandleFunc("/api/action/output", s.handleActionOutput)
 	mux.HandleFunc("/api/files/list", s.handleFileList)
 	mux.HandleFunc("/api/files/upload", s.handleFileUpload)
 	mux.HandleFunc("/api/config", s.handleConfigUpdate)
+	mux.HandleFunc("/api/template/preview", s.handleTemplatePreview)
 	mux.HandleFunc("/api/plex/test", s.handlePlexTest)
 	mux.HandleFunc("/api/action/", s.handleAction)
 	mux.HandleFunc("/api/sections/", s.handleSectionCollections)
@@ -274,6 +276,80 @@ func (s *webServer) handlePlexTest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, webActionResponse{OK: true, Message: "Plex connection succeeded.", Logs: logBuffer.String()})
 }
 
+func (s *webServer) handleTemplatePreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var request webTemplatePreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+		return
+	}
+	cfg, err := loadWebRuntimeConfig(s.configPath, s.logger)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	applyTemplatePreviewRequest(&cfg, request, s.configPath)
+	preview, err := generateTemplatePreview(cfg, request.TemplateKind, request.SampleText)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, webTemplatePreviewResponse{
+		OK:           true,
+		TemplateKind: preview.TemplateKind,
+		TemplatePath: pathForConfigDisplay(s.configPath, preview.TemplatePath),
+		SampleText:   preview.SampleText,
+		ImageDataURL: preview.ImageDataURL,
+		Width:        preview.Width,
+		Height:       preview.Height,
+	})
+}
+
+func applyTemplatePreviewRequest(cfg *Config, request webTemplatePreviewRequest, configPath string) {
+	if cfg == nil {
+		return
+	}
+	if value := strings.TrimSpace(request.TemplateImage); value != "" {
+		cfg.TemplateImage = resolvePathRelativeToConfig(configPath, value)
+	}
+	if value := strings.TrimSpace(request.TypeTemplateImage); value != "" {
+		cfg.TypeTemplateImage = resolvePathRelativeToConfig(configPath, value)
+	}
+	if value := strings.TrimSpace(request.StudioTemplateImage); value != "" {
+		cfg.StudioTemplateImage = resolvePathRelativeToConfig(configPath, value)
+	}
+	if value := strings.TrimSpace(request.AdminTemplateImage); value != "" {
+		cfg.AdminTemplateImage = resolvePathRelativeToConfig(configPath, value)
+	}
+	if value := strings.TrimSpace(request.FontFile); value != "" {
+		cfg.Font.File = resolvePathRelativeToConfig(configPath, value)
+	}
+	if request.FontSize > 0 {
+		cfg.Font.Size = request.FontSize
+	}
+	if value := strings.TrimSpace(request.FontColor); value != "" {
+		cfg.Font.Color = value
+	}
+	if value := strings.TrimSpace(request.FontShadowColor); value != "" {
+		cfg.Font.ShadowColor = value
+	}
+	if value := strings.TrimSpace(request.FontGlowColor); value != "" {
+		cfg.Font.GlowColor = value
+	}
+	cfg.Font.ShadowOffsetX = request.FontShadowOffsetX
+	cfg.Font.ShadowOffsetY = request.FontShadowOffsetY
+	if request.FontGlowRadius >= 0 {
+		cfg.Font.GlowRadius = request.FontGlowRadius
+	}
+	if request.FontGlowAlpha >= 0 && request.FontGlowAlpha <= 1 {
+		cfg.Font.GlowAlpha = request.FontGlowAlpha
+	}
+	cfg.Font.YOffset = request.FontYOffset
+}
+
 func (s *webServer) handleSectionCollections(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -397,7 +473,7 @@ func (s *webServer) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
-	if scope != "collections-import" {
+	if scope != "collections-import" && scope != "template-images" {
 		writeJSONError(w, http.StatusBadRequest, "unsupported upload scope")
 		return
 	}
@@ -416,8 +492,13 @@ func (s *webServer) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "upload filename is required")
 		return
 	}
-	if strings.ToLower(filepath.Ext(baseName)) != ".json" {
+	ext := strings.ToLower(filepath.Ext(baseName))
+	if scope == "collections-import" && ext != ".json" {
 		writeJSONError(w, http.StatusBadRequest, "only .json import files are supported")
+		return
+	}
+	if scope == "template-images" && !isAllowedTemplateImageExtension(ext) {
+		writeJSONError(w, http.StatusBadRequest, "only image files are supported for template uploads")
 		return
 	}
 	cfg, err := loadWebRuntimeConfig(s.configPath, s.logger)
@@ -425,8 +506,13 @@ func (s *webServer) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	defaultPath := resolveCollectionTransferPath(cfg, "collections-export.json")
-	targetDir := filepath.Dir(defaultPath)
+	var targetDir string
+	if scope == "collections-import" {
+		defaultPath := resolveCollectionTransferPath(cfg, "collections-export.json")
+		targetDir = filepath.Dir(defaultPath)
+	} else {
+		targetDir = resolveTemplateImageDir(cfg)
+	}
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -451,6 +537,10 @@ func (s *webServer) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	value := targetPath
+	if scope == "template-images" {
+		value = pathForConfigDisplay(s.configPath, targetPath)
+	}
 	writeJSON(w, http.StatusOK, struct {
 		OK      bool            `json:"ok"`
 		Message string          `json:"message"`
@@ -463,7 +553,7 @@ func (s *webServer) handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		OK:      true,
 		Message: fmt.Sprintf("Uploaded %s", filepath.Base(targetPath)),
 		File:    filepath.Base(targetPath),
-		Value:   targetPath,
+		Value:   value,
 		Scope:   scope,
 		Default: defaultValue,
 		Files:   files,
@@ -481,8 +571,257 @@ func (s *webServer) filesForScope(scope string) ([]webFileOption, string, error)
 		dir := filepath.Dir(defaultPath)
 		files, err := listFilesForImportScope(dir)
 		return files, defaultPath, err
+	case "template-images":
+		dir := resolveTemplateImageDir(cfg)
+		files, err := listFilesForTemplateScope(s.configPath, dir)
+		if err != nil {
+			return nil, "", err
+		}
+		return files, pathForConfigDisplay(s.configPath, cfg.TemplateImage), nil
 	default:
 		return nil, "", fmt.Errorf("unsupported file scope: %s", scope)
+	}
+}
+
+func listFilesForTemplateScope(configPath, dir string) ([]webFileOption, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []webFileOption{}, nil
+		}
+		return nil, err
+	}
+	out := make([]webFileOption, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if !isAllowedTemplateImageExtension(ext) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		fullPath := filepath.Join(dir, entry.Name())
+		out = append(out, webFileOption{
+			Name:    entry.Name(),
+			Value:   pathForConfigDisplay(configPath, fullPath),
+			ModTime: info.ModTime().Format(time.RFC3339),
+			Size:    info.Size(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ModTime > out[j].ModTime
+	})
+	return out, nil
+}
+
+func isAllowedTemplateImageExtension(ext string) bool {
+	switch strings.ToLower(strings.TrimSpace(ext)) {
+	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveTemplateImageDir(cfg Config) string {
+	candidates := []string{
+		strings.TrimSpace(cfg.TemplateImage),
+		strings.TrimSpace(cfg.TypeTemplateImage),
+		strings.TrimSpace(cfg.StudioTemplateImage),
+		strings.TrimSpace(cfg.AdminTemplateImage),
+	}
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		dir := filepath.Dir(candidate)
+		if strings.TrimSpace(dir) != "" && dir != "." {
+			return dir
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return filepath.Join(wd, "templates")
+	}
+	return "templates"
+}
+
+func pathForConfigDisplay(configPath, targetPath string) string {
+	trimmed := strings.TrimSpace(targetPath)
+	if trimmed == "" {
+		return ""
+	}
+	baseDir := filepath.Dir(configPath)
+	rel, err := filepath.Rel(baseDir, trimmed)
+	if err != nil || strings.TrimSpace(rel) == "" {
+		return trimmed
+	}
+	if rel == "." {
+		return "./"
+	}
+	if !strings.HasPrefix(rel, ".") {
+		return "./" + rel
+	}
+	return rel
+}
+
+func (s *webServer) handleConfigContent(w http.ResponseWriter, r *http.Request) {
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if scope == "" {
+		writeJSONError(w, http.StatusBadRequest, "scope is required")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		path, err := s.resolveConfigContentPath(scope)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		content, err := readConfigContentFile(path)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, webConfigContentResponse{Scope: scope, Path: pathForConfigDisplay(s.configPath, path), Content: content})
+	case http.MethodPost:
+		var request webConfigContentUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
+			return
+		}
+		request.Scope = strings.TrimSpace(request.Scope)
+		if request.Scope == "" {
+			request.Scope = scope
+		}
+		if request.Scope != scope {
+			writeJSONError(w, http.StatusBadRequest, "scope mismatch")
+			return
+		}
+		path, err := s.resolveConfigContentPath(scope)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		content := normalizeConfigContent(scope, request.Content)
+		if isTomlContentScope(scope) {
+			probe := map[string]any{}
+			if strings.TrimSpace(content) != "" {
+				if err := toml.Unmarshal([]byte(content), &probe); err != nil {
+					writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("invalid TOML: %v", err))
+					return
+				}
+			}
+		}
+		if err := writeConfigContentFile(path, content); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, webActionResponse{OK: true, Message: "Config content updated."})
+	default:
+		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *webServer) resolveConfigContentPath(scope string) (string, error) {
+	cfg, err := loadWebRuntimeConfig(s.configPath, s.logger)
+	if err != nil {
+		return "", err
+	}
+	switch scope {
+	case "type-collections":
+		if strings.TrimSpace(cfg.TypeCollectionsFile) == "" {
+			return "", errors.New("type_collections_file is not configured")
+		}
+		return cfg.TypeCollectionsFile, nil
+	case "studio-collections":
+		if strings.TrimSpace(cfg.StudioCollectionsFile) == "" {
+			return "", errors.New("studio_collections_file is not configured")
+		}
+		return cfg.StudioCollectionsFile, nil
+	case "admin-collections":
+		if strings.TrimSpace(cfg.AdminCollectionsFile) == "" {
+			return "", errors.New("admin_collections_file is not configured")
+		}
+		return cfg.AdminCollectionsFile, nil
+	case "label-config":
+		if strings.TrimSpace(cfg.LabelConfigFile) == "" {
+			return "", errors.New("label_config is not configured")
+		}
+		return cfg.LabelConfigFile, nil
+	case "collection-config":
+		if strings.TrimSpace(cfg.CollectionConfigFile) == "" {
+			return "", errors.New("collection_config is not configured")
+		}
+		return cfg.CollectionConfigFile, nil
+	default:
+		return "", fmt.Errorf("unsupported config content scope: %s", scope)
+	}
+}
+
+func readConfigContentFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimRight(string(content), "\n"), nil
+}
+
+func writeConfigContentFile(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+func normalizeConfigContent(scope, content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !isCollectionListScope(scope) {
+		return strings.TrimSpace(content)
+	}
+	lines := strings.Split(content, "\n")
+	seen := map[string]struct{}{}
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		filtered = append(filtered, trimmed)
+	}
+	return strings.Join(filtered, "\n")
+}
+
+func isCollectionListScope(scope string) bool {
+	switch scope {
+	case "type-collections", "studio-collections", "admin-collections":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTomlContentScope(scope string) bool {
+	switch scope {
+	case "label-config", "collection-config":
+		return true
+	default:
+		return false
 	}
 }
 

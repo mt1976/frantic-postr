@@ -1,0 +1,10 @@
+.git
+.gitignore
+.DS_Store
+logs/
+output/
+backups/
+*.test
+*.out
+coverage.*
+profile.cov

@@ -14,6 +14,9 @@ import (
 
 func SetupLogger(path string) (*core.AppLogger, func(), error) {
 	runLogPath := UniqueRunLogPath(path, time.Now())
+	if err := os.MkdirAll(filepath.Dir(runLogPath), 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create log dir: %w", err)
+	}
 	f, err := os.OpenFile(runLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, nil, err

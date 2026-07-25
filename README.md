@@ -30,10 +30,47 @@ go run . -web -port 8080
 
 Web UI notes:
 
-- The server binds to `127.0.0.1` only.
+- The server binds to all interfaces (`0.0.0.0`) so it can be reached from your LAN.
 - The dashboard exposes the major workflows: poster generation, title cleaning, translation, labels, collection export/import/inject, duplicate audits, non-smart deletion, path-clean, clone, backup, restore, and rollback.
 - Use the configuration card to edit Plex settings and the exposed runtime config fields; saves are written back to the active TOML config files.
 - A built-in help page is available at `/help`, and the dashboard includes an About dialog with version and runtime details.
+
+## Docker
+
+Build the image:
+
+```bash
+./docker-build.sh
+```
+
+Run with Compose:
+
+```bash
+docker compose up --build
+```
+
+What gets externalized:
+
+- `config/`
+- `templates/`
+- `fonts/`
+- `output/`
+- `backups/`
+- `logs/`
+- `.frantic-postr-selection.json`
+
+Compose maps `./docker-data` to `/data` in the container.
+
+Container bootstrap behavior:
+
+- On startup, if `/data/config`, `/data/templates`, `/data/fonts`, `/data/output`, `/data/backups`, or `/data/logs` is empty, it is seeded from the image copy.
+- If `/data/config/config.toml` is missing but `/data/config/config.example.toml` exists, `config.toml` is created from the example.
+
+Default container command:
+
+```bash
+/app/frantic-postr -config /data/config/config.toml -web -port 8080
+```
 
 `config/config.plex.toml` is intended to stay local and is ignored by git.
 

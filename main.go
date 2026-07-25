@@ -859,7 +859,7 @@ func loadConfig(path string) (Config, error) {
 		}
 		cfg.AdminCollectionSet = set
 	}
-	if err := requireDirExists("output_dir", cfg.OutputDir); err != nil {
+	if err := ensureDirExists("output_dir", cfg.OutputDir); err != nil {
 		return cfg, err
 	}
 	if cfg.Font.File != "" {
@@ -869,7 +869,7 @@ func loadConfig(path string) (Config, error) {
 	}
 	logDir := filepath.Dir(cfg.LogFile)
 	if logDir != "" && logDir != "." {
-		if err := requireDirExists("log_file directory", logDir); err != nil {
+		if err := ensureDirExists("log_file directory", logDir); err != nil {
 			return cfg, err
 		}
 	}
@@ -906,6 +906,15 @@ func loadOpsConfig(path string) (Config, error) {
 	cfg.OutputDir = resolvePathRelativeToConfig(path, cfg.OutputDir)
 	if cfg.Backup.RetentionDays < 0 {
 		return cfg, errors.New("backup.retention_days must be >= 0")
+	}
+	if err := ensureDirExists("output_dir", cfg.OutputDir); err != nil {
+		return cfg, err
+	}
+	logDir := filepath.Dir(cfg.LogFile)
+	if logDir != "" && logDir != "." {
+		if err := ensureDirExists("log_file directory", logDir); err != nil {
+			return cfg, err
+		}
 	}
 	return cfg, nil
 }
@@ -1020,6 +1029,16 @@ func requireDirExists(name, path string) error {
 		return fmt.Errorf("%s must be a directory, got file: %s", name, path)
 	}
 	return nil
+}
+
+func ensureDirExists(name, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("%s path is empty", name)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return fmt.Errorf("failed to create %s %s: %w", name, path, err)
+	}
+	return requireDirExists(name, path)
 }
 
 func backupArchiveDir(workspaceRoot string) string {

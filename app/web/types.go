@@ -224,6 +224,46 @@ type webActionResponse struct {
 	Logs    string `json:"logs,omitempty"`
 }
 
+type webConfigContentResponse struct {
+	Scope   string `json:"scope"`
+	Path    string `json:"path,omitempty"`
+	Content string `json:"content"`
+}
+
+type webConfigContentUpdateRequest struct {
+	Scope   string `json:"scope"`
+	Content string `json:"content"`
+}
+
+type webTemplatePreviewRequest struct {
+	TemplateKind      string  `json:"template_kind"`
+	SampleText        string  `json:"sample_text"`
+	TemplateImage     string  `json:"template_image"`
+	TypeTemplateImage string  `json:"type_template_image"`
+	StudioTemplateImage string `json:"studio_template_image"`
+	AdminTemplateImage  string `json:"admin_template_image"`
+	FontFile          string  `json:"font_file"`
+	FontSize          float64 `json:"font_size"`
+	FontColor         string  `json:"font_color"`
+	FontShadowColor   string  `json:"font_shadow_color"`
+	FontShadowOffsetX int     `json:"font_shadow_offset_x"`
+	FontShadowOffsetY int     `json:"font_shadow_offset_y"`
+	FontGlowColor     string  `json:"font_glow_color"`
+	FontGlowRadius    int     `json:"font_glow_radius"`
+	FontGlowAlpha     float64 `json:"font_glow_alpha"`
+	FontYOffset       int     `json:"font_y_offset"`
+}
+
+type webTemplatePreviewResponse struct {
+	OK           bool   `json:"ok"`
+	TemplateKind string `json:"template_kind"`
+	TemplatePath string `json:"template_path"`
+	SampleText   string `json:"sample_text"`
+	ImageDataURL string `json:"image_data_url"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+}
+
 type webFileOption struct {
 	Name    string `json:"name"`
 	Value   string `json:"value"`
