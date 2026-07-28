@@ -12,518 +12,13 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.23.8/dist/css/uikit.min.css">
+  <link rel="manifest" href="/res/site.webmanifest">
+  <link rel="icon" href="/res/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/res/icon-192.svg">
+  <meta name="theme-color" content="#23353c">
+  <link rel="stylesheet" href="/res/app.css">
   <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.23.8/dist/js/uikit.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/uikit@3.23.8/dist/js/uikit-icons.min.js"></script>
-  <style>
-    :root {
-      --fp-ink: #182126;
-      --fp-deep: #23353c;
-      --fp-sand: #f5efe2;
-      --fp-paper: rgba(255,255,255,0.78);
-      --fp-accent: #d36b2d;
-      --fp-accent-soft: #f0bc6c;
-      --fp-line: rgba(24,33,38,0.12);
-      --fp-ok: #2d8b57;
-      --fp-warn: #a65b21;
-      --fp-error: #9d2f2f;
-    }
-    html, body {
-      min-height: 100%;
-      background:
-        radial-gradient(circle at top left, rgba(240,188,108,0.4), transparent 30%),
-        linear-gradient(160deg, #f8f1e4 0%, #f2e9d8 42%, #ebe5da 100%);
-      color: var(--fp-ink);
-      font-family: "Space Grotesk", sans-serif;
-    }
-    .fp-shell {
-      max-width: 1380px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-    .fp-hero {
-      background: linear-gradient(135deg, rgba(35,53,60,0.96), rgba(54,78,85,0.92));
-      color: #f7f3ea;
-      border-radius: 28px;
-      padding: 32px;
-      box-shadow: 0 24px 70px rgba(31, 36, 41, 0.16);
-      overflow: hidden;
-      position: relative;
-    }
-    .fp-hero::after {
-      content: "";
-      position: absolute;
-      right: -80px;
-      top: -40px;
-      width: 260px;
-      height: 260px;
-      background: radial-gradient(circle, rgba(240,188,108,0.46), transparent 70%);
-    }
-    .fp-kicker, .fp-meta, .fp-log, .uk-input, .uk-select, .uk-textarea, .uk-button {
-      font-family: "IBM Plex Mono", monospace;
-    }
-		.uk-button {
-			border-radius: 999px;
-			font-weight: 600;
-			letter-spacing: 0.02em;
-			border: 1px solid rgba(24,33,38,0.16);
-			transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
-		}
-		.uk-button:hover,
-		.uk-button:focus {
-			transform: translateY(-1px);
-			box-shadow: 0 8px 20px rgba(24,33,38,0.14);
-			border-color: rgba(24,33,38,0.32);
-		}
-		.fp-shell .uk-flex.uk-gap-small {
-			gap: 10px !important;
-		}
-		.fp-shell .uk-flex.uk-gap-small.uk-flex-wrap {
-			row-gap: 10px !important;
-		}
-		.uk-button-primary {
-			background: linear-gradient(135deg, #2f78d0, #2a62b5);
-			color: #f8fbff;
-			border-color: rgba(24,54,97,0.72);
-		}
-		.uk-button-secondary {
-			background: rgba(255,255,255,0.72);
-			color: var(--fp-deep);
-			border-color: rgba(24,33,38,0.24);
-		}
-		.uk-button-default {
-			background: rgba(255,255,255,0.55);
-			color: var(--fp-deep);
-			border-color: rgba(24,33,38,0.2);
-		}
-		.uk-button-danger {
-			background: linear-gradient(135deg, #bb3f3f, #972f2f);
-			color: #fff6f6;
-			border-color: rgba(109,30,30,0.8);
-		}
-		.fp-hero .uk-button-secondary,
-		.fp-hero .uk-button-default {
-			background: rgba(247,243,234,0.16);
-			color: #fff7ea;
-			border-color: rgba(247,243,234,0.38);
-			box-shadow: 0 10px 22px rgba(10, 14, 17, 0.22);
-		}
-		.fp-hero .uk-button-secondary:hover,
-		.fp-hero .uk-button-default:hover,
-		.fp-hero .uk-button-secondary:focus,
-		.fp-hero .uk-button-default:focus {
-			background: rgba(247,243,234,0.28);
-			color: #fffdf7;
-			border-color: rgba(247,243,234,0.58);
-			box-shadow: 0 14px 26px rgba(10, 14, 17, 0.28);
-		}
-    .fp-card, .uk-card {
-      border-radius: 22px;
-      background: var(--fp-paper);
-      border: 1px solid var(--fp-line);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 18px 50px rgba(24,33,38,0.08);
-    }
-    .fp-title {
-      letter-spacing: -0.04em;
-      margin: 0;
-			color: #ffffff;
-    }
-    .fp-kicker {
-      display: inline-flex;
-      gap: 10px;
-      align-items: center;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      font-size: 12px;
-      color: rgba(247,243,234,0.82);
-    }
-    .fp-summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 14px;
-    }
-    .fp-stat {
-      padding: 16px 18px;
-      border-radius: 18px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.08);
-    }
-    .fp-stat strong {
-      display: block;
-      font-size: 24px;
-      line-height: 1.1;
-      margin-top: 10px;
-    }
-    .fp-section-title {
-	  margin: 0 0 10px;
-	  font-size: 1.28rem;
-	  font-weight: 700;
-	  letter-spacing: -0.01em;
-    }
-		.uk-tab {
-			margin-bottom: 8px;
-			gap: 8px;
-			margin-left: 0;
-			padding-left: 0;
-		}
-		.uk-tab > * {
-			padding-left: 0;
-		}
-		.uk-switcher {
-			margin-left: 0;
-			padding-left: 0;
-		}
-		.uk-tab > * > a {
-			border: 1px solid rgba(24,33,38,0.14);
-			border-radius: 12px;
-			background: rgba(255,255,255,0.62);
-			color: rgba(24,33,38,0.8);
-			text-transform: none;
-			letter-spacing: 0.02em;
-			font-size: 13px;
-			font-weight: 600;
-			padding: 10px 14px;
-			transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 180ms ease;
-		}
-		.uk-tab > * > a:hover {
-			border-color: rgba(24,33,38,0.34);
-			background: rgba(255,255,255,0.85);
-			color: var(--fp-ink);
-			transform: translateY(-1px);
-		}
-		.uk-tab > .uk-active > a {
-			border-color: rgba(211,107,45,0.48);
-			background: linear-gradient(135deg, rgba(211,107,45,0.2), rgba(240,188,108,0.25));
-			color: var(--fp-deep);
-			box-shadow: 0 8px 22px rgba(35,53,60,0.1);
-		}
-		.uk-button-primary {
-			background: linear-gradient(140deg, #d36b2d 0%, #e3924b 100%);
-			border: 1px solid rgba(166,91,33,0.62);
-			min-height: 42px;
-			padding: 0 18px;
-			box-shadow: 0 8px 18px rgba(166,91,33,0.22);
-			transition: transform 160ms ease, box-shadow 180ms ease, filter 160ms ease;
-		}
-		.uk-button-primary:hover,
-		.uk-button-primary:focus {
-			transform: translateY(-1px);
-			box-shadow: 0 11px 24px rgba(166,91,33,0.28);
-			filter: brightness(1.02);
-		}
-    .fp-banner {
-      border-radius: 18px;
-      padding: 14px 16px;
-      display: none;
-    }
-    .fp-banner.active {
-      display: block;
-    }
-    .fp-banner.ok { background: rgba(45,139,87,0.12); color: var(--fp-ok); }
-    .fp-banner.warn { background: rgba(166,91,33,0.14); color: var(--fp-warn); }
-    .fp-banner.error { background: rgba(157,47,47,0.12); color: var(--fp-error); }
-    .fp-log {
-      min-height: 280px;
-      max-height: 480px;
-      overflow: auto;
-      padding: 18px;
-      border-radius: 18px;
-      background: #151d21;
-      color: #e9e6dd;
-      white-space: pre-wrap;
-      border: 1px solid rgba(255,255,255,0.07);
-    }
-		.fp-log-wrap {
-			position: relative;
-		}
-		.fp-copy-log {
-			position: absolute;
-			right: 12px;
-			top: 12px;
-			z-index: 2;
-		}
-		.fp-log-wrap .fp-log {
-			padding-top: 56px;
-		}
-		.fp-template-manager .uk-form-label {
-			margin-bottom: 6px;
-		}
-		.fp-config-list {
-			border: 1px solid var(--fp-line);
-			border-radius: 14px;
-			background: rgba(255,255,255,0.7);
-			padding: 10px;
-			max-height: 360px;
-			overflow: auto;
-		}
-		.fp-config-list-row {
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			gap: 10px;
-			padding: 8px 10px;
-			border-radius: 10px;
-			background: rgba(35,53,60,0.06);
-			margin-bottom: 8px;
-		}
-		.fp-config-list-row:last-child {
-			margin-bottom: 0;
-		}
-		.fp-config-list-value {
-			font-family: "IBM Plex Mono", monospace;
-			font-size: 12px;
-			word-break: break-word;
-		}
-		.fp-config-list-empty {
-			padding: 10px;
-			color: rgba(24,33,38,0.62);
-			font-family: "IBM Plex Mono", monospace;
-			font-size: 12px;
-		}
-		.fp-preview-panel {
-			min-height: 220px;
-			border-radius: 14px;
-			border: 1px dashed rgba(24,33,38,0.22);
-			background: rgba(255,255,255,0.54);
-			padding: 12px;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-		}
-		.fp-inline-editor {
-			border: 1px solid var(--fp-line);
-			border-radius: 14px;
-			padding: 12px;
-			background: rgba(255,255,255,0.66);
-		}
-		.fp-inline-chip-wrap {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 8px;
-			margin-top: 10px;
-		}
-		.fp-inline-chip {
-			display: inline-flex;
-			align-items: center;
-			gap: 8px;
-			border-radius: 999px;
-			padding: 6px 10px;
-			background: rgba(35,53,60,0.1);
-			font-family: "IBM Plex Mono", monospace;
-			font-size: 12px;
-		}
-		.fp-inline-chip button {
-			border: 0;
-			background: rgba(157,47,47,0.14);
-			color: var(--fp-error);
-			border-radius: 999px;
-			width: 20px;
-			height: 20px;
-			line-height: 20px;
-			padding: 0;
-			cursor: pointer;
-		}
-		.fp-config-structured {
-			display: grid;
-			gap: 10px;
-		}
-		.fp-lookup-card {
-			border: 1px solid var(--fp-line);
-			border-radius: 12px;
-			padding: 10px;
-			background: rgba(255,255,255,0.72);
-		}
-		.fp-editor-mode-switch {
-			display: flex;
-			gap: 8px;
-			margin-bottom: 8px;
-		}
-		.fp-editor-mode-switch button.uk-button-primary {
-			pointer-events: none;
-		}
-		.fp-progress-wrap {
-			border-radius: 14px;
-			border: 1px solid var(--fp-line);
-			background: rgba(255,255,255,0.6);
-			padding: 12px;
-		}
-		.fp-progress-head {
-			display: flex;
-			justify-content: space-between;
-			align-items: center;
-			gap: 10px;
-			font-family: "IBM Plex Mono", monospace;
-			font-size: 12px;
-			color: rgba(24,33,38,0.78);
-			margin-bottom: 8px;
-		}
-		.fp-progress-title {
-			margin: 0;
-			font-size: 13px;
-			letter-spacing: 0.04em;
-			text-transform: uppercase;
-		}
-		.fp-progress-bar {
-			width: 100%;
-			height: 14px;
-			appearance: none;
-			border: 0;
-			border-radius: 999px;
-			overflow: hidden;
-			background: rgba(24,33,38,0.1);
-		}
-		.fp-progress-bar::-webkit-progress-bar {
-			background: rgba(24,33,38,0.1);
-			border-radius: 999px;
-		}
-		.fp-progress-bar::-webkit-progress-value {
-			background: linear-gradient(90deg, var(--fp-accent), var(--fp-accent-soft));
-			border-radius: 999px;
-			transition: width 120ms linear;
-		}
-		.fp-progress-bar::-moz-progress-bar {
-			background: linear-gradient(90deg, var(--fp-accent), var(--fp-accent-soft));
-			border-radius: 999px;
-		}
-		.fp-progress-meta {
-			margin-top: 8px;
-			font-family: "IBM Plex Mono", monospace;
-			font-size: 12px;
-			color: rgba(24,33,38,0.66);
-		}
-    .fp-chip {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 5px 10px;
-      background: rgba(211,107,45,0.12);
-      color: var(--fp-accent);
-      font-size: 12px;
-      margin: 4px 6px 0 0;
-    }
-    .fp-actions-grid {
-      display: grid;
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-	  gap: 22px;
-			align-items: stretch;
-    }
-		.fp-actions-grid > .uk-card:last-child:nth-child(odd) {
-			grid-column: 1 / -1;
-		}
-		.fp-actions-grid > .uk-card {
-			height: 100%;
-			display: flex;
-			flex-direction: column;
-		}
-		.fp-card .fp-button-group {
-			display: flex;
-			flex-wrap: wrap;
-			align-items: center;
-			gap: 8px;
-		}
-		.fp-card .fp-action-row {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 8px;
-			align-items: center;
-		}
-		.fp-card .fp-action-row > .uk-button {
-			flex: 0 0 auto;
-			margin-top: 2px;
-		}
-		.uk-switcher > li {
-			margin-top: 4px;
-			padding-top: 4px;
-		}
-		.uk-switcher > li > .fp-actions-grid,
-		.uk-switcher > li > .uk-card {
-			margin-bottom: 10px;
-		}
-    .fp-muted {
-      color: rgba(24,33,38,0.68);
-    }
-    .fp-path {
-      word-break: break-all;
-    }
-    .fp-footer-note {
-      font-size: 12px;
-      color: rgba(24,33,38,0.62);
-    }
-		.fp-test-button {
-			position: relative;
-			border: 1px solid rgba(24,33,38,0.16);
-			transition: border-color 180ms ease, box-shadow 180ms ease, color 180ms ease, background 180ms ease;
-		}
-		.fp-test-button:hover,
-		.fp-test-button:focus {
-			border-color: rgba(24,33,38,0.32);
-		}
-		.fp-test-button.is-loading {
-			border-color: rgba(211,107,45,0.6);
-			box-shadow: 0 0 0 3px rgba(211,107,45,0.12);
-		}
-		.fp-test-button.is-success {
-			border-color: rgba(45,139,87,0.9);
-			box-shadow: 0 0 0 3px rgba(45,139,87,0.14);
-			color: var(--fp-ok);
-			background: rgba(45,139,87,0.08);
-		}
-		.fp-test-button.is-error {
-			border-color: rgba(157,47,47,0.9);
-			box-shadow: 0 0 0 3px rgba(157,47,47,0.14);
-			color: var(--fp-error);
-			background: rgba(157,47,47,0.08);
-		}
-		.fp-test-button-icon {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			width: 1.1rem;
-			margin-left: 8px;
-			opacity: 0;
-			transform: scale(0.8);
-			transition: opacity 180ms ease, transform 180ms ease;
-		}
-		.fp-test-button.is-success .fp-test-button-icon,
-		.fp-test-button.is-error .fp-test-button-icon,
-		.fp-test-button.is-loading .fp-test-button-icon {
-			opacity: 1;
-			transform: scale(1);
-		}
-		.fp-test-button.is-success .fp-test-button-icon {
-			color: var(--fp-ok);
-		}
-		.fp-test-button.is-error .fp-test-button-icon {
-			color: var(--fp-error);
-		}
-		.fp-test-button.is-loading .fp-test-button-icon {
-			color: var(--fp-accent);
-			animation: fp-pulse 1s ease-in-out infinite;
-		}
-		.fp-glyph-icon {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			font-size: 14px;
-			line-height: 1;
-			color: currentColor;
-		}
-		@keyframes fp-pulse {
-			0%, 100% { opacity: 0.45; }
-			50% { opacity: 1; }
-		}
-    @media (max-width: 640px) {
-			.fp-actions-grid {
-				grid-template-columns: minmax(0, 1fr);
-			}
-			.fp-actions-grid > .uk-card:last-child:nth-child(odd) {
-				grid-column: auto;
-			}
-      .fp-shell { padding: 14px; }
-      .fp-hero { padding: 22px; border-radius: 22px; }
-      .fp-log { min-height: 220px; }
-    }
-  </style>
 </head>
 <body>
   <div class="fp-shell">
@@ -532,14 +27,14 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
         <div>
           <div class="fp-kicker">{{.Mode}} <span>•</span> Version {{.Version}}</div>
           <h1 class="fp-title uk-heading-small">{{.AppName}} control room</h1>
-          <p class="uk-text-large uk-margin-small-top uk-margin-medium-bottom" style="max-width: 760px; color: rgba(247,243,234,0.86);">Run poster generation, library cleanup, collection maintenance, and backup workflows from a local UIKit dashboard without losing the existing Plex-aware Go logic.</p>
-          <div class="uk-flex uk-flex-wrap uk-gap-small">
+		  <p class="uk-text-large uk-margin-small-top uk-margin-medium-bottom fp-hero-description">Run poster generation, library cleanup, collection maintenance, and backup workflows from a local UIKit dashboard without losing the existing Plex-aware Go logic.</p>
+		  <div class="uk-flex uk-flex-wrap uk-gap-small">
 						<button class="uk-button uk-button-secondary" id="refresh-state"><span uk-icon="refresh" class="uk-margin-small-right"></span>Refresh state</button>
 						<a class="uk-button uk-button-default" href="{{.HelpPath}}"><span uk-icon="question" class="uk-margin-small-right"></span>Help & tips</a>
 						<button class="uk-button uk-button-default" uk-toggle="target: #about-modal"><span uk-icon="info" class="uk-margin-small-right"></span>About</button>
           </div>
         </div>
-        <div class="fp-summary-grid" style="min-width: min(100%, 380px); max-width: 420px;">
+		<div class="fp-summary-grid fp-summary-grid-wide">
           <div class="fp-stat">
             <span class="fp-kicker">Listening</span>
 						<strong>0.0.0.0:{{.Port}}</strong>
@@ -565,7 +60,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 				<li><a href="#"><span uk-icon="lock" class="uk-margin-small-right"></span>Backup & Restore</a></li>
 			</ul>
 			<div>
-				<button class="uk-button uk-button-primary" id="save-config-global" type="submit" form="config-form" style="display:none;"><span class="uk-margin-small-right" aria-hidden="true">&#128190;</span>Save config</button>
+				<button class="uk-button uk-button-primary fp-hidden" id="save-config-global" type="submit" form="config-form"><span class="uk-margin-small-right" aria-hidden="true">&#128190;</span>Save config</button>
 			</div>
 		</div>
 		<ul id="main-switcher" class="uk-switcher uk-margin">
@@ -603,7 +98,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 								<div class="uk-width-1-1">
 									<label class="uk-form-label" for="token">API key / token</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<input class="uk-input" id="token" name="token" type="password" autocomplete="off" style="min-width: 260px;">
+										<input class="uk-input fp-min-260" id="token" name="token" type="password" autocomplete="off">
 										<button class="uk-button uk-button-default" type="button" data-toggle-password="token" aria-label="Reveal token"><span uk-icon="eye" class="uk-margin-small-right"></span>Show</button>
 									</div>
 								</div>
@@ -635,32 +130,32 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 								<div class="uk-width-1-1 fp-template-manager" data-target-input="template-image" data-upload-role="template-image-main" data-label="Template image">
 									<label class="uk-form-label" for="template-image-select">Template image</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<select class="uk-select fp-template-select" id="template-image-select" style="min-width: 260px;"></select>
-										<input class="uk-input fp-template-upload" id="template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<select class="uk-select fp-template-select fp-min-260" id="template-image-select"></select>
+										<input class="uk-input fp-template-upload fp-min-260" id="template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif">
 										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
 									</div>
 								</div>
 								<div class="uk-width-1-1 fp-template-manager" data-target-input="type-template-image" data-upload-role="template-image-type" data-label="Type template image">
 									<label class="uk-form-label" for="type-template-image-select">Type template image</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<select class="uk-select fp-template-select" id="type-template-image-select" style="min-width: 260px;"></select>
-										<input class="uk-input fp-template-upload" id="type-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<select class="uk-select fp-template-select fp-min-260" id="type-template-image-select"></select>
+										<input class="uk-input fp-template-upload fp-min-260" id="type-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif">
 										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
 									</div>
 								</div>
 								<div class="uk-width-1-1 fp-template-manager" data-target-input="studio-template-image" data-upload-role="template-image-studio" data-label="Studio template image">
 									<label class="uk-form-label" for="studio-template-image-select">Studio template image</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<select class="uk-select fp-template-select" id="studio-template-image-select" style="min-width: 260px;"></select>
-										<input class="uk-input fp-template-upload" id="studio-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<select class="uk-select fp-template-select fp-min-260" id="studio-template-image-select"></select>
+										<input class="uk-input fp-template-upload fp-min-260" id="studio-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif">
 										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
 									</div>
 								</div>
 								<div class="uk-width-1-1 fp-template-manager" data-target-input="admin-template-image" data-upload-role="template-image-admin" data-label="Admin template image">
 									<label class="uk-form-label" for="admin-template-image-select">Admin template image</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<select class="uk-select fp-template-select" id="admin-template-image-select" style="min-width: 260px;"></select>
-										<input class="uk-input fp-template-upload" id="admin-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif" style="min-width: 260px;">
+										<select class="uk-select fp-template-select fp-min-260" id="admin-template-image-select"></select>
+										<input class="uk-input fp-template-upload fp-min-260" id="admin-template-image-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff,.avif">
 										<button class="uk-button uk-button-secondary fp-template-upload-btn" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload</button>
 									</div>
 								</div>
@@ -753,7 +248,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 						</div>
 						<div id="template-preview-meta" class="fp-footer-note uk-margin-small-top">No preview generated yet.</div>
 						<div id="template-preview-panel" class="fp-preview-panel uk-margin-small-top">
-							<img id="template-preview-image" alt="Template preview" style="display:none; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--fp-line);">
+							<img id="template-preview-image" class="fp-preview-image" alt="Template preview">
 							<p id="template-preview-empty" class="fp-muted uk-margin-remove">Click Generate sample to render a preview.</p>
 						</div>
 					</div>
@@ -768,7 +263,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 							<div class="uk-width-1-1">
 								<label class="uk-form-label" for="translate-api-key">Translate API key</label>
 								<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-									<input class="uk-input" id="translate-api-key" name="translate_api_key" type="password" autocomplete="off" style="min-width: 260px;">
+									<input class="uk-input fp-min-260" id="translate-api-key" name="translate_api_key" type="password" autocomplete="off">
 									<button class="uk-button uk-button-default" type="button" data-toggle-password="translate-api-key" aria-label="Reveal translate API key"><span uk-icon="eye" class="uk-margin-small-right"></span>Show</button>
 								</div>
 							</div>
@@ -937,11 +432,11 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
                   <select class="uk-select" id="import-section"></select>
 									<label class="uk-form-label uk-margin-small-top" for="import-file">Import file</label>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle">
-										<select class="uk-select" id="import-file" style="min-width: 320px;"></select>
+										<select class="uk-select fp-min-320" id="import-file"></select>
 										<button class="uk-button uk-button-default" id="refresh-import-files" type="button"><span uk-icon="refresh" class="uk-margin-small-right"></span>Refresh files</button>
 									</div>
 									<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle uk-margin-small-top">
-										<input class="uk-input" id="import-file-upload" type="file" accept=".json,application/json" style="min-width: 320px;">
+										<input class="uk-input fp-min-320" id="import-file-upload" type="file" accept=".json,application/json">
 										<button class="uk-button uk-button-secondary" id="upload-import-file" type="button"><span uk-icon="upload" class="uk-margin-small-right"></span>Upload import file</button>
 									</div>
                   <label class="uk-margin-small-top"><input class="uk-checkbox" id="import-trail" type="checkbox"> Dry run only</label>
@@ -1069,13 +564,13 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			</div>
 			<div id="config-editor-list-mode" hidden>
 				<div class="uk-flex uk-gap-small uk-flex-wrap uk-flex-middle uk-margin-small-bottom">
-					<input id="config-editor-item-input" class="uk-input" type="text" placeholder="Add new entry" style="min-width: 280px;">
+						<input id="config-editor-item-input" class="uk-input fp-min-280" type="text" placeholder="Add new entry">
 					<button class="uk-button uk-button-primary" id="config-editor-add-item" type="button"><span uk-icon="plus" class="uk-margin-small-right"></span>Add</button>
 				</div>
 				<div id="config-editor-list" class="fp-config-list"></div>
 			</div>
 			<div id="config-editor-structured" class="fp-config-structured" hidden></div>
-			<textarea id="config-editor-text" class="uk-textarea" rows="14" style="font-family: 'IBM Plex Mono', monospace;"></textarea>
+			<textarea id="config-editor-text" class="uk-textarea fp-mono" rows="14"></textarea>
 			<div class="uk-flex uk-flex-between uk-flex-middle uk-flex-wrap uk-margin-top uk-gap-small">
 				<span id="config-editor-hint" class="fp-footer-note">Edit and save.</span>
 				<div class="uk-flex uk-gap-small uk-flex-wrap">
@@ -2947,35 +2442,13 @@ var webHelpTemplate = template.Must(template.New("help").Parse(`<!doctype html>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.23.8/dist/css/uikit.min.css">
-  <style>
-    body {
-      background: linear-gradient(180deg, #f6eddc 0%, #f1e7d7 100%);
-      color: #182126;
-      font-family: "Space Grotesk", sans-serif;
-      margin: 0;
-    }
-    .fp-help {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 28px 18px 40px;
-    }
-    .fp-help-card {
-      border-radius: 24px;
-      background: rgba(255,255,255,0.8);
-      padding: 28px;
-      box-shadow: 0 18px 50px rgba(24,33,38,0.08);
-      border: 1px solid rgba(24,33,38,0.1);
-      margin-bottom: 18px;
-    }
-    code { font-family: "IBM Plex Mono", monospace; }
-  </style>
 </head>
-<body>
+<body class="fp-help-page">
   <main class="fp-help">
     <div class="fp-help-card">
       <div class="uk-flex uk-flex-between uk-flex-middle uk-flex-wrap uk-gap-small">
         <div>
-          <p class="uk-text-meta" style="letter-spacing: 0.16em; text-transform: uppercase;">Useful tips</p>
+		  <p class="uk-text-meta fp-help-kicker">Useful tips</p>
           <h1 class="uk-heading-small uk-margin-small-top">{{.AppName}} web help</h1>
         </div>
         <a class="uk-button uk-button-default" href="/">Back to dashboard</a>

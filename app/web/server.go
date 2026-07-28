@@ -40,6 +40,10 @@ func startWebServer(configPath string, port int, logger *AppLogger) error {
 
 func (s *webServer) routes() http.Handler {
 	mux := http.NewServeMux()
+	resourceDir := locateWebResourcesDir()
+	if resourceDir != "" {
+		mux.Handle("/res/", http.StripPrefix("/res/", http.FileServer(http.Dir(resourceDir))))
+	}
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/help", s.handleHelp)
 	mux.HandleFunc("/api/state", s.handleState)
@@ -55,6 +59,36 @@ func (s *webServer) routes() http.Handler {
 	mux.HandleFunc("/api/action/", s.handleAction)
 	mux.HandleFunc("/api/sections/", s.handleSectionCollections)
 	return s.withConnectionLogging(mux)
+}
+
+func locateWebResourcesDir() string {
+	candidates := []string{}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, wd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Dir(exe))
+	}
+	seen := map[string]struct{}{}
+	for _, start := range candidates {
+		current := start
+		for current != "" {
+			if _, ok := seen[current]; ok {
+				break
+			}
+			seen[current] = struct{}{}
+			resDir := filepath.Join(current, "res")
+			if info, err := os.Stat(resDir); err == nil && info.IsDir() {
+				return resDir
+			}
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+			current = parent
+		}
+	}
+	return ""
 }
 
 func (s *webServer) withConnectionLogging(next http.Handler) http.Handler {
