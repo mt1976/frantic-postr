@@ -12,7 +12,7 @@ type_collections_file = './types-collections.txt'
 type_template_image = '../templates/template-type.png'
 
 [backup]
-retention_days = 30
+retention_days = 29
 
 [clean]
 translate_api_http_address = 'https://libretranslate.com/translate'

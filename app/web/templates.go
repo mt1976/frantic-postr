@@ -30,7 +30,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		  <p class="uk-text-large uk-margin-small-top uk-margin-medium-bottom fp-hero-description">Run poster generation, library cleanup, collection maintenance, and backup workflows from a local UIKit dashboard without losing the existing Plex-aware Go logic.</p>
 		  <div class="uk-flex uk-flex-wrap uk-gap-small">
 						<button class="uk-button uk-button-secondary" id="refresh-state"><span uk-icon="refresh" class="uk-margin-small-right"></span>Refresh state</button>
-						<a class="uk-button uk-button-default" href="{{.HelpPath}}"><span uk-icon="question" class="uk-margin-small-right"></span>Help & tips</a>
+						<button class="uk-button uk-button-default" type="button" uk-toggle="target: #help-modal"><span uk-icon="question" class="uk-margin-small-right"></span>Help & tips</button>
 						<button class="uk-button uk-button-default" uk-toggle="target: #about-modal"><span uk-icon="info" class="uk-margin-small-right"></span>About</button>
           </div>
         </div>
@@ -581,6 +581,56 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		</div>
 	</div>
 
+	<div id="help-modal" uk-modal>
+		<div class="uk-modal-dialog uk-modal-body fp-card fp-help-modal-dialog">
+			<button class="uk-modal-close-default" type="button" uk-close></button>
+			<div class="fp-help-modal-scroll">
+				<div class="fp-help-card">
+					<div class="uk-flex uk-flex-between uk-flex-middle uk-flex-wrap uk-gap-small">
+						<div>
+						<p class="uk-text-meta fp-help-kicker">Useful tips</p>
+							<h2 class="uk-modal-title uk-margin-small-top">{{.AppName}} web help</h2>
+						</div>
+					</div>
+					<p class="uk-text-large">The web UI is local-only, uses the same Go workflows as the CLI, and is best treated as an operations console rather than a separate product tier.</p>
+				</div>
+
+				<div class="fp-help-card">
+					<h3>Recommended flow</h3>
+					<ul class="uk-list uk-list-bullet">
+						<li>Confirm the Plex URL and token first. A valid config unlocks library discovery and all Plex-backed actions.</li>
+						<li>Use dry-run checkboxes before destructive actions such as cleaning titles, deleting non-smart collections, imports, and restores.</li>
+						<li>Run stats or duplicate-collection audits before cleanup so you have fresh reports in the output folders.</li>
+						<li>Use backup before large operations that touch multiple files or collections.</li>
+					</ul>
+				</div>
+
+				<div class="fp-help-card">
+					<h3>Action notes</h3>
+					<ul class="uk-list uk-list-bullet">
+						<li><code>Generate posters</code> can target multiple libraries at once and optionally upload finished posters back to Plex.</li>
+						<li><code>Clean titles</code> can optionally translate titles first, then apply the configured cleanup replacements.</li>
+						<li><code>Path clean</code> rewrites titles from collection item file paths and writes a CSV audit into <code>output/path-clean/</code>.</li>
+						<li><code>Export collections</code> writes JSON under <code>output/collections-export/</code> when you provide only a filename.</li>
+						<li><code>Restore</code> accepts a partial backup filename; leaving it blank restores the newest archive in non-interactive mode.</li>
+					</ul>
+				</div>
+
+				<div class="fp-help-card">
+					<h3>Troubleshooting</h3>
+					<ul class="uk-list uk-list-bullet">
+						<li>If the dashboard loads but libraries do not, the config is readable but the Plex connection is failing. Check URL, token, and network reachability.</li>
+						<li>If an operation says config validation failed, fix missing template, font, or output paths before retrying that workflow.</li>
+						<li>If a restore or rollback fails, review the operation log first, then inspect the latest files under <code>output/restore/</code>.</li>
+					</ul>
+				</div>
+			</div>
+			<div class="uk-flex uk-flex-right uk-margin-top">
+				<button class="uk-button uk-button-primary uk-modal-close" type="button">Close</button>
+			</div>
+		</div>
+	</div>
+
   <div id="about-modal" uk-modal>
     <div class="uk-modal-dialog uk-modal-body fp-card">
       <button class="uk-modal-close-default" type="button" uk-close></button>
@@ -897,7 +947,13 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			}
 			const configPanel = configForm.closest('li');
 			const visible = !!(configPanel && configPanel.classList.contains('uk-active'));
-			button.style.display = visible ? '' : 'none';
+			if (visible) {
+				button.classList.remove('fp-hidden');
+				button.style.removeProperty('display');
+				return;
+			}
+			button.classList.add('fp-hidden');
+			button.style.display = 'none';
 		}
 
 		function applyActionRowLayout() {
@@ -2418,8 +2474,18 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 
 		const mainSwitcher = document.getElementById('main-switcher');
 		if (mainSwitcher) {
+			mainSwitcher.addEventListener('show', () => {
+				updateGlobalSaveButtonVisibility();
+			});
 			mainSwitcher.addEventListener('shown', () => {
 				updateGlobalSaveButtonVisibility();
+			});
+		}
+
+		const mainTabList = document.querySelector('ul[uk-tab]');
+		if (mainTabList) {
+			mainTabList.addEventListener('click', () => {
+				requestAnimationFrame(updateGlobalSaveButtonVisibility);
 			});
 		}
 
