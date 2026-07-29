@@ -536,20 +536,19 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 				<progress id="progress-bar" class="fp-progress-bar" max="100" value="0"></progress>
 				<div class="fp-progress-meta" id="progress-meta">Idle</div>
 			</div>
-		</div>
-
-		<ul uk-accordion class="uk-margin-top">
-			<li>
-				<a class="uk-accordion-title" href="#"><span uk-icon="file-text" class="uk-margin-small-right"></span>Operation log</a>
-				<div class="uk-accordion-content">
-					<p class="fp-muted uk-margin-small-top">Action output is always available here, no matter which tab is active.</p>
-					<div class="fp-log-wrap uk-margin-top">
+			<div class="uk-margin-top">
+				<div class="uk-flex uk-flex-between uk-flex-wrap uk-flex-middle uk-gap-small uk-margin-small-bottom">
+					<h3 class="fp-section-title uk-margin-remove">Operation log</h3>
+					<div class="uk-flex uk-flex-wrap uk-gap-small uk-flex-middle">
+						<button class="uk-button uk-button-default uk-button-small" id="toggle-log" type="button" aria-expanded="false"><span uk-icon="chevron-down" class="uk-margin-small-right"></span>Show log</button>
 						<button class="uk-button uk-button-default uk-button-small fp-copy-log" id="copy-log" type="button"><span uk-icon="copy" class="uk-margin-small-right"></span>Copy</button>
-						<pre id="action-log" class="fp-log">No action has been run yet.</pre>
 					</div>
 				</div>
-			</li>
-		</ul>
+				<p class="fp-muted uk-margin-small-top">Action output stays available here when you want to inspect it.</p>
+				<div class="fp-log-wrap uk-margin-top" id="action-log-panel" hidden>
+					<pre id="action-log" class="fp-log">No action has been run yet.</pre>
+				</div>
+			</div>
 	</div>
   </div>
 
@@ -676,7 +675,8 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		configEditorRawContent: '',
 		configEditorStructuredContent: '',
 		configEditorMode: 'structured',
-		configEditorStructuredReady: false
+		configEditorStructuredReady: false,
+		logExpanded: false
 	};
 
     const sectionSelectIds = [
@@ -859,19 +859,47 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 			}
 		}
 
+		function applyOperationLogState() {
+			const panel = document.getElementById('action-log-panel');
+			const toggle = document.getElementById('toggle-log');
+			if (!panel || !toggle) {
+				return;
+			}
+			const expanded = state.logExpanded;
+			panel.hidden = !expanded;
+			toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+			toggle.innerHTML = '<span uk-icon="' + (expanded ? 'chevron-up' : 'chevron-down') + '" class="uk-margin-small-right"></span>' + (expanded ? 'Hide log' : 'Show log');
+			if (typeof UIkit !== 'undefined' && UIkit.icon) {
+				UIkit.icon(toggle.querySelector('[uk-icon]'));
+			}
+		}
+
+		function setOperationLogExpanded(expanded) {
+			state.logExpanded = expanded;
+			try {
+				localStorage.setItem('frantic-postr.logExpanded', expanded ? '1' : '0');
+			} catch (error) {
+				// Ignore storage failures.
+			}
+			applyOperationLogState();
+		}
+
+		function restoreOperationLogState() {
+			try {
+				const saved = localStorage.getItem('frantic-postr.logExpanded');
+				if (saved === '1') {
+					state.logExpanded = true;
+				} else if (saved === '0') {
+					state.logExpanded = false;
+				}
+			} catch (error) {
+				// Ignore storage failures.
+			}
+			applyOperationLogState();
+		}
+
 		function openOperationLogAccordion() {
-			if (typeof UIkit === 'undefined' || !UIkit.accordion) {
-				return;
-			}
-			const root = document.querySelector('ul[uk-accordion]');
-			if (!root) {
-				return;
-			}
-			const accordion = UIkit.accordion(root);
-			if (!accordion) {
-				return;
-			}
-			accordion.toggle(0, true);
+			setOperationLogExpanded(true);
 		}
 
 		function configEditorLabel(scope) {
@@ -2085,7 +2113,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		}
 
     async function runAction(action, payload) {
-	openOperationLogAccordion();
+	setOperationLogExpanded(true);
 	state.lastParsedLogText = '';
 	state.seenToastLogLines = {};
 	setLog('Running ' + action + '...');
@@ -2245,6 +2273,10 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		document.getElementById('clean-replacements').addEventListener('input', () => {
 			state.cleanReplacementItems = parseCleanReplacementsRaw(document.getElementById('clean-replacements').value);
 			renderCleanReplacementsList();
+		});
+
+		document.getElementById('toggle-log').addEventListener('click', () => {
+			setOperationLogExpanded(!state.logExpanded);
 		});
 
 		document.getElementById('copy-log').addEventListener('click', async () => {
@@ -2492,6 +2524,7 @@ var webIndexTemplate = template.Must(template.New("index").Parse(`<!doctype html
 		applyActionRowLayout();
 		reorderTabsAndActivatePosters();
 		updateGlobalSaveButtonVisibility();
+		restoreOperationLogState();
 		pollActionStatus();
 		refreshState();
   </script>
