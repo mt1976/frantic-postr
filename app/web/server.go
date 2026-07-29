@@ -104,11 +104,11 @@ func (s *webServer) withConnectionLogging(next http.Handler) http.Handler {
 func resolveRemotePeer(r *http.Request) (string, string, string) {
 	remote := strings.TrimSpace(r.RemoteAddr)
 	if remote == "" {
-		return "unknown", "unknown", "unresolved"
+		return "unknown", "unknown", "unknown"
 	}
 	host, port, err := net.SplitHostPort(remote)
 	if err != nil {
-		return remote, "unknown", "unresolved"
+		return remote, "unknown", "unknown"
 	}
 	ip := strings.TrimSpace(host)
 	if ip == "" {
@@ -117,18 +117,22 @@ func resolveRemotePeer(r *http.Request) (string, string, string) {
 	if strings.TrimSpace(port) == "" {
 		port = "unknown"
 	}
-	hostLabel := "unresolved"
+	hostLabel := "unknown"
 	if parsed := net.ParseIP(ip); parsed != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 300*time.Millisecond)
-		defer cancel()
-		names, lookupErr := net.DefaultResolver.LookupAddr(ctx, parsed.String())
-		if lookupErr == nil && len(names) > 0 {
-			resolved := strings.TrimSpace(names[0])
-			resolved = strings.TrimSuffix(resolved, ".")
-			if resolved != "" {
-				hostLabel = resolved
-			}
+		switch {
+		case parsed.IsLoopback():
+			hostLabel = "loopback"
+		case parsed.IsPrivate():
+			hostLabel = "private-network"
+		case parsed.IsLinkLocalUnicast():
+			hostLabel = "link-local"
+		case parsed.IsUnspecified():
+			hostLabel = "unspecified"
+		default:
+			hostLabel = parsed.String()
 		}
+	} else {
+		hostLabel = ip
 	}
 	return ip, port, hostLabel
 }
