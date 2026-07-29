@@ -4,6 +4,7 @@
 logs/
 output/
 backups/
+docker-data/
 *.test
 *.out
 coverage.*

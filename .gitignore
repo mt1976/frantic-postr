@@ -27,6 +27,7 @@ go.work.sum
 # env file
 .env
 config/config.plex.toml
+.dockerhub.env
 
 # Editor/IDE
 # .idea/

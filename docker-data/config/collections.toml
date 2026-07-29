@@ -1,0 +1,15 @@
+# Smart collection definitions for -col-inject.
+# Copy additional entries here from Plex exports as needed.
+# The source library section id inside each content URI is rewritten to the selected target library.
+
+base_uri = "server://e65327115ab52197082f62c058948cacbc13e53b/com.plexapp.plugins.library/library/sections/39/all?type=1&sort=addedAt%3Adesc"
+
+[[collection.lookup]]
+title = "4K Ultra HD"
+smart = true
+content = "push=1&resolution=2.7k&or=1&resolution=4k&pop=1"
+
+[[collection.lookup]]
+title = "Dolby Vision"
+smart = true
+content = "dovi=1"

@@ -1,0 +1,462 @@
+[[label.lookup]]
+title_contains = "abandoned"
+labels = ["urbsex", "abandoned"]
+categories = ["urbsex", "abandoned"]
+update_category = true
+
+[[label.lookup]]
+title_contains = "fisting"
+labels = ["fisting"]
+categories = ["fisting"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Chem", "PnP"]
+labels = ["Chems"]
+categories = ["Chems"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Leather", "Rubber", "Latex", "Skin Gear", "Skingear", "Uniform", "Sportswear", "Workwear", "Military", "Boot", "Boots", "Neoprene", "Wetsuit", "BLUF"]
+labels = ["Kink"]
+categories = ["Kink"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Piss", "Peee", "Pee ", " Pee", "Pee-","Watersports", "WS", "Urine", "Golden Shower"]
+labels = ["Piss"]
+categories = ["Piss"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["eStim", "E-stim", "E Stim", "E-Stim", "Electro", "Electrosex"]
+labels = ["Electro","eStim"]
+categories = ["Electro","eStim"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Fuck", "Fucking", "Fucked", "Fucks", "Fucker", "Fuckers","Frick", "Fricking", "Fricked", "Fricks", "Fricker", "Frickers"]
+labels = ["Fucking"]
+categories = ["Fucking"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bareback", "BB", "Raw", "Rawsex"]
+labels = ["Bareback"]
+categories = ["Bareback"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Poz", "Pozz", "Pozzy", "Poz ", " Poz", "Poz-","Toxic", "Tox", "Toxx", "Tox ", " Tox", "Tox-"]
+labels = ["Poz"]
+categories = ["Poz"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Smoke", "Smok", "Smoky", "Smokey","Cigarette", "Cigarette", "Cig","Ciggy", "Ciggies","Cigar", "Cigars","Stoggy", "Stoggie", "Stoggies"]
+labels = ["Cigars","Smoking"]
+categories = ["Cigars","Smoking"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Mud", "Mudding", "Mud ", " Mud", "Mud-","Mucky", "Muck", "Mucky", "Muck ", " Muck", "Muck-","Gunge", "Gungey", "Gunge", "Gunge ", " Gunge", "Gunge-","Slime", "Slimy", "Slime ", " Slime", "Slime-","Sludge", "Sludgy", "Sludge ", " Sludge", "Sludge-","WAM", "WAMmy", "WAM ", " WAM", "WAM-","Mess", "Messy", "Mess ", " Mess", "Mess-"]
+labels = ["WAM","Mucky"]
+categories = ["WAM","Mucky"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["British", "UK", "United Kingdom", "London", "Manchester", "Birmingham", "Leeds", "Liverpool", "Sheffield", "Bristol", "Edinburgh", "Glasgow", "Cardiff", "Newcastle", "Nottingham", "Leicester", "Coventry", "Bradford", "Wolverhampton", "Plymouth", "Southampton", "Swansea", "Aberdeen", "Dundee", "York", "Oxford", "Cambridge", "Brighton", "Bath", "Exeter", "Belfast", "Norwich", "Stoke", "Derby", "Ipswich", "Reading", "Luton", "Sunderland", "Preston", "Middlesbrough"]
+labels = ["British", "UK"]
+categories = ["British", "UK"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Ireland", "Irish", "Eire", "Dublin", "Cork", "Limerick", "Galway", "Waterford", "Kerry", "Killarney", "Wicklow", "Sligo", "Drogheda", "Dundalk", "Kilkenny", "Wexford", "Tralee", "Ennis", "Letterkenny"]
+labels = ["Irish", "Ireland"]
+categories = ["Irish", "Ireland"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["USA", "America", "American", "United States", "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Francisco", "Seattle", "Denver", "Boston", "Nashville", "Las Vegas", "Portland", "Atlanta", "Miami", "Detroit", "Minneapolis", "Tampa", "New Orleans", "Austin", "Baltimore", "Milwaukee", "Pittsburgh", "Cleveland", "Sacramento", "Kansas City", "Cincinnati", "Orlando", "Indianapolis", "Columbus", "Charlotte", "Raleigh", "Virginia Beach", "Omaha", "Louisville", "Memphis", "Richmond", "Boise", "Tucson", "Fresno", "Albuquerque", "Salt Lake City", "Honolulu", "Anchorage", "Buffalo", "Providence", "Hartford", "Newark", "St. Louis"]
+labels = ["American", "US"]
+categories = ["American", "US"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Leather", "Rubber", "Latex", "Skin Gear", "Skingear", "Uniform", "Sportswear", "Workwear", "Military", "Boot", "Boots"]
+labels = ["Gear"]
+categories = ["Gear"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Dom", "Dominant", "Sub", "Submissive", "Switch", "Alpha", "Service", "Primal", "Pup", "Puppy", "Handler"]
+labels = ["PowerDynamics"]
+categories = ["PowerDynamics"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bondage", "Sleepsack", "Sleep Sack", "Straitjacket", "Straightjacket", "Mummification", "Mummy", "Rope", "Vacuum Bed", "Vac Bed", "Encasement", "Encased", "Restrained", "Restraint", "Hogtie"]
+labels = ["Restraint"]
+categories = ["Restraint"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Electro", "Electrosex", "eStim", "E-stim", "E Stim", "CBT", "Nipple", "Nipples", "Pumping", "Pump", "Milking", "Milker", "Wax", "Impact", "Tickling"]
+labels = ["SensationPlay"]
+categories = ["SensationPlay"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bareback", "BB", "Raw", "Rawsex", "Piss", "WS", "Watersports", "Spit", "Scent", "Musk", "Sweat", "Armpit", "Armpits", "Feet", "Foot", "Hairy", "Bear", "Bears"]
+labels = ["BodyContact"]
+categories = ["BodyContact"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Outdoor", "Public", "Abandoned", "Urbex", "Car Play", "Carplay", "Camping", "Cruising"]
+labels = ["Environment"]
+categories = ["Environment"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Group", "Gangbang", "Orgy", "FWB", "Friend", "Friends", "Couple", "Couples", "Daddy", "Daddies", "Older", "Mature", "Intergenerational"]
+labels = ["Social"]
+categories = ["Social"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Smoke", "Smoking", "Cigar", "Cigars", "Cigarette", "Cigarettes", "Cig", "Ciggy", "Ciggies", "Stoggy", "Stoggie", "Stoggies"]
+labels = ["Smoking"]
+categories = ["Smoking"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Mud", "Mudding", "Mucky", "Muck", "Gunge", "Gungey", "Slime", "Slimy", "Sludge", "Sludgy", "WAM", "Mess", "Messy"]
+labels = ["WAM", "Mess"]
+categories = ["WAM", "Mess"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Poppers", "Chem", "Chems", "PnP"]
+labels = ["Chems"]
+categories = ["Chems"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bear", "Bears", "Muscle Bear", "Musclebear", "Cub", "Cubs", "Otter", "Otters", "Daddy", "Daddies", "Twink", "Twinks", "Muscle", "Bodybuilder", "Jock", "Rugby", "Skinhead", "Skins", "Chub", "BHM"]
+labels = ["Type"]
+categories = ["Type"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Builder", "Construction", "Tradie", "Tradesman", "Workman", "Police", "Cop", "Policeman", "Fireman", "Firefighter", "Military", "Army", "Soldier", "Marine", "Biker", "Motorcycle", "Rugby Player", "Rugby Lad"]
+labels = ["Role"]
+categories = ["Role"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Asian", "Desi", "Indian", "Pakistani", "Sikh", "Black", "Latino", "Arab", "Middle Eastern", "Mixed Race"]
+labels = ["Ethnicity"]
+categories = ["Ethnicity"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Scat", "Scatology", "Copro", "Coprophilia", "Coprophagia", "Poop", "Poo", "Shit", "Shitting", "Turd", "Dump", "Human Toilet"]
+labels = ["SUSPECT"]
+categories = ["SUSPECT"]
+update_category = true
+
+#
+# Man Types
+#
+
+[[label.lookup]]
+title_contains_any = ["Twink", "Skinny", "Slim", "Slender"]
+labels = ["Twink"]
+categories = ["Twink"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Twunk"]
+labels = ["Twunk"]
+categories = ["Twunk"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bear", "Hairy Bear"]
+labels = ["Bear"]
+categories = ["Bear"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Muscle Bear", "Musclebear"]
+labels = ["MuscleBear"]
+categories = ["MuscleBear"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Muscle", "Bodybuilder", "Built"]
+labels = ["Muscle"]
+categories = ["Muscle"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Chunk", "Chunky", "Thick", "Thicc"]
+labels = ["Chunky"]
+categories = ["Chunky"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Cub"]
+labels = ["Cub"]
+categories = ["Cub"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Otter", "Hairy Slim"]
+labels = ["Otter"]
+categories = ["Otter"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Daddy", "Dad Bod", "Older Guy"]
+labels = ["Daddy"]
+categories = ["Daddy"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Jock", "Athlete"]
+labels = ["Jock"]
+categories = ["Jock"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Muscle", "Bodybuilder", "Built"]
+labels = ["Muscle"]
+categories = ["Muscle"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Chub", "Chubby", "BHM", "Big Man"]
+labels = ["Chub"]
+categories = ["Chub"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Silver Fox", "Grey", "Mature"]
+labels = ["SilverFox"]
+categories = ["SilverFox"]
+update_category = true
+
+
+#
+# Gear
+#
+
+[[label.lookup]]
+title_contains_any = ["Leather", "BLUF"]
+labels = ["Leather"]
+categories = ["Leather"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Rubber", "Latex", "Gummi", "Gummy"]
+labels = ["Rubber"]
+categories = ["Rubber"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Glove", "Gloves", "Gloved", "Gloving","Glovework","GOM","Glove On Me","Glove On My","Glove On His","Glove On Her"]
+labels = ["Breathplay"]
+categories = ["Breathplay"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Skinhead", "Skin Gear"]
+labels = ["Skinhead"]
+categories = ["Skinhead"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Uniform", "Uniformed"]
+labels = ["Uniform"]
+categories = ["Uniform"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Sportswear", "Trackies"]
+labels = ["Sportswear"]
+categories = ["Sportswear"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Military", "Army", "Soldier", "Marine", "Navy", "Air Force", "Military Uniform", "Military Uniforms","Marines", "Sailor", "Seaman", "Airman"]
+labels = ["Military"]
+categories = ["Military"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Neoprene", "Wetsuit"]
+labels = ["Neoprene"]
+categories = ["Neoprene"]
+update_category = true
+
+
+#
+# Ethnicity
+#
+
+[[label.lookup]]
+title_contains_any = ["Indian", "Pakistani", "Bangladeshi", "Desi", "Sikh"]
+labels = ["Desi"]
+categories = ["Desi"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Japanese", "Chinese", "Korean", "Asian"]
+labels = ["Asian"]
+categories = ["Asian"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Latino", "Hispanic", "Latin"]
+labels = ["Latino"]
+categories = ["Latino"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Black", "African","Nigger", "Nigga", "Negro", "Afro", "African-American", "African American"]
+labels = ["Black"]
+categories = ["Black"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Arab", "Middle Eastern"]
+labels = ["MiddleEastern"]
+categories = ["MiddleEastern"]
+update_category = true
+
+
+#
+# Power Dynamics
+#
+
+[[label.lookup]]
+title_contains_any = ["Dom", "Dominant", "Master", "Sir"]
+labels = ["Dom"]
+categories = ["Dom"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Sub", "Submissive", "Boy"]
+labels = ["Sub"]
+categories = ["Sub"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Switch"]
+labels = ["Switch"]
+categories = ["Switch"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Primal","Animal", "Animalistic"]
+labels = ["Primal"]
+categories = ["Primal"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Pup", "Puppy"]
+labels = ["Pup"]
+categories = ["Pup"]
+update_category = true
+
+
+#
+# Sexual Roles
+#
+
+[[label.lookup]]
+title_contains_any = ["Top", "Total Top"]
+labels = ["Top"]
+categories = ["Top"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bottom", "Power Bottom"]
+labels = ["Bottom"]
+categories = ["Bottom"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Vers", "Versatile"]
+labels = ["Vers"]
+categories = ["Vers"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Side"]
+labels = ["Side"]
+categories = ["Side"]
+update_category = true
+
+
+#
+# Body Contact
+#
+
+[[label.lookup]]
+title_contains_any = ["Hairy", "Furry", "Fur", "Bear", "Bears"]
+labels = ["Hairy"]
+categories = ["Hairy"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Beard", "Bearded", "Facial Hair"]
+labels = ["Beard"]
+categories = ["Beard"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Musk", "Scent", "Smell", "Aroma", "Odor", "Odour"]
+labels = ["Musk"]
+categories = ["Musk"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Sweat", "Sweaty"]
+labels = ["Sweat"]
+categories = ["Sweat"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Armpit", "Pit"]
+labels = ["Armpits"]
+categories = ["Armpits"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Feet", "Foot"]
+labels = ["Feet"]
+categories = ["Feet"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Spit", "Saliva","Gob"]
+labels = ["Spit"]
+categories = ["Spit"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Smoke", "Smoking", "Cigar", "Cigarette"]
+labels = ["Smoking"]
+categories = ["Smoking"]
+update_category = true
+
+[[label.lookup]]
+title_contains_any = ["Bareback", "Raw"]
+labels = ["Bareback"]
+categories = ["Bareback"]
+update_category = true
+
+

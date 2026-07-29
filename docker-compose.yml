@@ -1,12 +1,9 @@
 services:
   frantic-postr:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: frantic-postr:local
+    image: mt1976/frantic-postr:latest
     container_name: frantic-postr
     ports:
-      - "8080:8080"
+      - "5080:8080"
     working_dir: /data
     environment:
       FRANTIC_POSTR_DATA_DIR: /data

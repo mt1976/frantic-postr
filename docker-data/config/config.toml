@@ -1,0 +1,49 @@
+admin_collections_file = './admin-collections.txt'
+admin_template_image = '../templates/template-admin.png'
+collection_config = './collections.toml'
+label_config = './labels.toml'
+log_file = '../logs/frantic-postr.log'
+output_dir = '../output'
+plex_config = './plex.toml'
+studio_collections_file = './studio-collections.txt'
+studio_template_image = '../templates/template-studio.png'
+template_image = '../templates/template-general.png'
+type_collections_file = './types-collections.txt'
+type_template_image = '../templates/template-type.png'
+
+[backup]
+retention_days = 30
+
+[clean]
+translate_api_http_address = 'https://libretranslate.com/translate'
+translate_api_key = ''
+translate_endpoint = 'https://libretranslate.com/translate'
+translate_rate_limit_per_minute = 10
+translate_to_english = false
+
+[clean.replacements]
+'$' = 'Dollar'
+'&' = 'and'
+'FULL MOVIE' = ''
+'£' = 'GBP'
+
+[font]
+color = '#FFFFFF'
+file = '../fonts/Drips.ttf'
+glow_alpha = 0.9
+glow_color = '#fbff00'
+glow_radius = 2
+shadow_color = '#7b8204'
+shadow_offset_x = 2
+shadow_offset_y = 2
+size = 140.0
+y_offset = 0
+
+[plex]
+retries = 6
+retry_base_ms = 500
+retry_max_ms = 50000
+workers = 10
+
+[stats]
+exclude_words = ['xxx', 'sample', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1080p', '720p', '480p', '2160p', '4k', '8k', 'uhd', 'hdrip', 'brrip', 'dvdrip', 'bluray', 'web-dl', 'webdl', 'webrip', 'hdtv', 'camrip', 'dvdscr', 'dvdscreener', 'dvdr', 'bdrip', 'com', 'co.uk', 'net', 'org', 'info', 'biz', 'us', 'ca', 'au', 'de', 'fr', 'es', 'it', 'nl', 'se', 'no', 'fi', 'dk', 'pl', 'ru', 'jp', 'cn', 'kr']

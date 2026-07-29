@@ -1,0 +1,60 @@
+2026/07/29 15:11:41.656086 INFO log file: /data/logs/frantic-postr-20260729-151141.log
+2026/07/29 15:11:41.657525 INFO startup: frantic-postr config=/data/config/config.toml
+2026/07/29 15:11:41.658374 INFO config: web=true port=8080 no_color=false quiet=false trail=false upload_posters=false gen_posters=false missing_posters_only=false label_types=false coll_dupes=false coll_delete_non_smart=false coll_path_clean=false stats=false clone=false label=false coll_inject=false update_category=false only_category=false clean=false translate=false coll_export=false coll_import=false backup=false restore=false rollback=false coll_file=/data/output/collections-export/collections-export.json restore_file=
+2026/07/29 15:11:41.658524 SUCCESS web UI available at http://127.0.0.1:8080 (local)
+2026/07/29 15:11:41.658611 SUCCESS web UI available at http://<this-machine-ip>:8080 (LAN)
+2026/07/29 15:11:41.658640 INFO web help available at http://127.0.0.1:8080/help
+2026/07/29 15:11:56.736374 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/
+2026/07/29 15:11:56.867195 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/api/action/status
+2026/07/29 15:11:56.873018 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/api/state
+2026/07/29 15:11:56.873141 INFO web state requested: config=/data/config/config.toml
+2026/07/29 15:11:56.873234 INFO config display load: main file=/data/config/config.toml
+2026/07/29 15:11:56.877176 INFO config display effective: plex_config=./plex.toml log_file=../logs/frantic-postr.log output_dir=../output
+2026/07/29 15:11:56.878966 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:11:56.879025 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:11:56.882992 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:11:56.885711 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:11:56.904109 API plex call: GET http://192.168.1.195:32400/library/sections
+2026/07/29 15:11:56.905401 API plex curl: curl -X 'GET' 'http://192.168.1.195:32400/library/sections?X-Plex-Token=yooyQkcTthoasndvsQnU'
+2026/07/29 15:11:56.983466 INFO plex result: sections=29
+2026/07/29 15:11:56.986468 INFO web state loaded: config=/data/config/config.toml plex_url="http://192.168.1.195:32400" token_present=true sections=29 config_valid=true
+2026/07/29 15:11:57.028697 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/favicon.ico
+2026/07/29 15:11:57.029588 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/api/files/list
+2026/07/29 15:11:57.031206 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:11:57.031240 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:11:57.031655 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:11:57.031702 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:11:57.041374 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/api/sections/30/collections
+2026/07/29 15:11:57.043797 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:11:57.043965 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:11:57.044878 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:11:57.044944 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:11:57.045146 API plex call: GET http://192.168.1.195:32400/library/sections/30/collections
+2026/07/29 15:11:57.045307 API plex curl: curl -X 'GET' 'http://192.168.1.195:32400/library/sections/30/collections?X-Plex-Token=yooyQkcTthoasndvsQnU'
+2026/07/29 15:12:08.588543 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/
+2026/07/29 15:12:08.649299 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/api/state
+2026/07/29 15:12:08.649423 INFO web state requested: config=/data/config/config.toml
+2026/07/29 15:12:08.649449 INFO config display load: main file=/data/config/config.toml
+2026/07/29 15:12:08.655740 INFO config display effective: plex_config=./plex.toml log_file=../logs/frantic-postr.log output_dir=../output
+2026/07/29 15:12:08.657722 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:12:08.658093 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:12:08.660482 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/api/action/status
+2026/07/29 15:12:08.662026 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:12:08.662236 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:12:08.678885 API plex call: GET http://192.168.1.195:32400/library/sections
+2026/07/29 15:12:08.679132 API plex curl: curl -X 'GET' 'http://192.168.1.195:32400/library/sections?X-Plex-Token=yooyQkcTthoasndvsQnU'
+2026/07/29 15:12:08.694388 INFO plex result: sections=29
+2026/07/29 15:12:08.694886 INFO web state loaded: config=/data/config/config.toml plex_url="http://192.168.1.195:32400" token_present=true sections=29 config_valid=true
+2026/07/29 15:12:08.730147 API connection from 192.168.65.1 port 52329 host unresolved method=GET path=/favicon.ico
+2026/07/29 15:12:08.730913 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/api/files/list
+2026/07/29 15:12:08.735195 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:12:08.735248 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:12:08.735814 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:12:08.735891 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:12:08.744343 API connection from 192.168.65.1 port 49998 host unresolved method=GET path=/api/sections/30/collections
+2026/07/29 15:12:08.745644 INFO config load: main file=/data/config/config.toml
+2026/07/29 15:12:08.745693 INFO config load: resolved plex_config=/data/config/plex.toml
+2026/07/29 15:12:08.746374 INFO config load: merged plex config file=/data/config/plex.toml plex_url="http://192.168.1.195:32400" token_present=true
+2026/07/29 15:12:08.746452 INFO config load effective: plex_url="http://192.168.1.195:32400" token_present=true retries=6 workers=10
+2026/07/29 15:12:08.746484 API plex call: GET http://192.168.1.195:32400/library/sections/30/collections
+2026/07/29 15:12:08.746602 API plex curl: curl -X 'GET' 'http://192.168.1.195:32400/library/sections/30/collections?X-Plex-Token=yooyQkcTthoasndvsQnU'
