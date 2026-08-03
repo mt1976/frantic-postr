@@ -199,6 +199,9 @@ func runPosterGeneration(client *http.Client, cfg Config, selectedSections []ple
 }
 
 func init() {
+	if version := loadVersionNo(); version != "" {
+		web.SetAppVersion(version)
+	}
 	web.SetDeps(web.Deps{
 		AppDisplayName:                    appDisplayName,
 		LoadConfig:                        loadConfig,
@@ -280,6 +283,26 @@ func init() {
 			return newProgressTracker(logger, label, total)
 		},
 	})
+}
+
+func loadVersionNo() string {
+	paths := []string{
+		"version.no",
+	}
+	if exePath, err := os.Executable(); err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exePath), "version.no"))
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		version := strings.TrimSpace(string(data))
+		if version != "" {
+			return version
+		}
+	}
+	return ""
 }
 
 func main() {

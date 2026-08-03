@@ -26,6 +26,13 @@ type collectionInventoryEntry = core.CollectionInventoryEntry
 
 var appVersion = "development"
 
+func SetAppVersion(version string) {
+	trimmed := strings.TrimSpace(version)
+	if trimmed != "" {
+		appVersion = trimmed
+	}
+}
+
 type webServer struct {
 	configPath string
 	port       int
