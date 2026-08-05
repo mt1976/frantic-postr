@@ -19,7 +19,7 @@ RUN apk add --no-cache ca-certificates tzdata
 
 COPY --from=builder /out/frantic-postr /app/frantic-postr
 COPY --from=builder /src/res /app/res
-COPY version.no /data/version.no
+COPY version.no /app/version.no
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # Seed data copied into mounted folders only when destination is empty.
