@@ -438,6 +438,7 @@ func main() {
 	logger.Quiet = *quietMode
 	defer closeLogger()
 
+	logger.Printf("%s", styleBright(fmt.Sprintf("\n========================================\n  frantic-postr VERSION %s\n========================================", loadVersionNo())))
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
 	logger.Printf("config: web=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t missing_posters_only=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *webPort, *noColor, *quietMode, core.TrailModeEnabled, *uploadPosters, *genPostersMode, *missingPostersOnlyMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
 	if *webMode {
