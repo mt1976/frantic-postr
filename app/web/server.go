@@ -167,18 +167,26 @@ func (s *webServer) handleState(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	s.logger.Infof("web state requested: config=%s", s.configPath)
-	displayCfg, err := loadWebDisplayConfig(s.configPath, s.logger)
-	if err != nil {
-		s.logger.Errorf("web state display load failed: config=%s err=%v", s.configPath, err)
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	runtimeCfg, err := loadWebRuntimeConfig(s.configPath, s.logger)
+	response, err := s.stateResponse()
 	if err != nil {
 		s.logger.Errorf("web state load failed: config=%s err=%v", s.configPath, err)
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *webServer) stateResponse() (webStateResponse, error) {
+	s.logger.Infof("web state requested: config=%s", s.configPath)
+	displayCfg, err := loadWebDisplayConfig(s.configPath, s.logger)
+	if err != nil {
+		s.logger.Errorf("web state display load failed: config=%s err=%v", s.configPath, err)
+		return webStateResponse{}, err
+	}
+	runtimeCfg, err := loadWebRuntimeConfig(s.configPath, s.logger)
+	if err != nil {
+		s.logger.Errorf("web state runtime load failed: config=%s err=%v", s.configPath, err)
+		return webStateResponse{}, err
 	}
 	strictCfg, strictErr := loadConfig(s.configPath)
 	sections := []plexSection{}
@@ -261,7 +269,7 @@ func (s *webServer) handleState(w http.ResponseWriter, r *http.Request) {
 		response.LogFile = strictCfg.LogFile
 	}
 	s.logger.Infof("web state loaded: config=%s plex_url=%q token_present=%t sections=%d config_valid=%t", s.configPath, strings.TrimSpace(response.Plex.BaseURL), strings.TrimSpace(response.Plex.Token) != "", len(response.Sections), response.ConfigValid)
-	writeJSON(w, http.StatusOK, response)
+	return response, nil
 }
 
 func (s *webServer) handleConfigUpdate(w http.ResponseWriter, r *http.Request) {

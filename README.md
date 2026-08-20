@@ -22,6 +22,12 @@ To start the local UIKit-based web UI on port `8080`:
 go run . -config config/config.toml -web -port 8080
 ```
 
+To start the terminal UI:
+
+```bash
+go run . -config config/config.toml -tui
+```
+
 If you omit `-config`, the app uses `config/config.toml` by default:
 
 ```bash
@@ -34,6 +40,12 @@ Web UI notes:
 - The dashboard exposes the major workflows: poster generation, title cleaning, translation, labels, collection export/import/inject, duplicate audits, non-smart deletion, path-clean, clone, backup, restore, and rollback.
 - Use the configuration card to edit Plex settings and the exposed runtime config fields; saves are written back to the active TOML config files.
 - A built-in help page is available at `/help`, and the dashboard includes an About dialog with version and runtime details.
+
+Terminal UI notes:
+
+- The terminal UI opens with a splash screen, then switches into a tabbed control room.
+- Use `F1` through `F6` to switch tabs, `Ctrl-R` to refresh state, `Ctrl-S` to stop a running action, and `Esc` to quit.
+- It mirrors the web UI's major workflows where terminal controls make sense, including config edits, Plex testing, posters, library tools, collections, backup, restore, and rollback.
 
 ## Docker
 

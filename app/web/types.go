@@ -13,6 +13,7 @@ import (
 type AppLogger = core.AppLogger
 type Config = core.Config
 type PlexSection = core.PlexSection
+type PlexCollection = core.PlexCollection
 type plexSection = core.PlexSection
 type plexSectionDetail = core.PlexSectionDetail
 type plexSectionPref = core.PlexSectionPref
@@ -243,22 +244,22 @@ type webConfigContentUpdateRequest struct {
 }
 
 type webTemplatePreviewRequest struct {
-	TemplateKind      string  `json:"template_kind"`
-	SampleText        string  `json:"sample_text"`
-	TemplateImage     string  `json:"template_image"`
-	TypeTemplateImage string  `json:"type_template_image"`
-	StudioTemplateImage string `json:"studio_template_image"`
-	AdminTemplateImage  string `json:"admin_template_image"`
-	FontFile          string  `json:"font_file"`
-	FontSize          float64 `json:"font_size"`
-	FontColor         string  `json:"font_color"`
-	FontShadowColor   string  `json:"font_shadow_color"`
-	FontShadowOffsetX int     `json:"font_shadow_offset_x"`
-	FontShadowOffsetY int     `json:"font_shadow_offset_y"`
-	FontGlowColor     string  `json:"font_glow_color"`
-	FontGlowRadius    int     `json:"font_glow_radius"`
-	FontGlowAlpha     float64 `json:"font_glow_alpha"`
-	FontYOffset       int     `json:"font_y_offset"`
+	TemplateKind        string  `json:"template_kind"`
+	SampleText          string  `json:"sample_text"`
+	TemplateImage       string  `json:"template_image"`
+	TypeTemplateImage   string  `json:"type_template_image"`
+	StudioTemplateImage string  `json:"studio_template_image"`
+	AdminTemplateImage  string  `json:"admin_template_image"`
+	FontFile            string  `json:"font_file"`
+	FontSize            float64 `json:"font_size"`
+	FontColor           string  `json:"font_color"`
+	FontShadowColor     string  `json:"font_shadow_color"`
+	FontShadowOffsetX   int     `json:"font_shadow_offset_x"`
+	FontShadowOffsetY   int     `json:"font_shadow_offset_y"`
+	FontGlowColor       string  `json:"font_glow_color"`
+	FontGlowRadius      int     `json:"font_glow_radius"`
+	FontGlowAlpha       float64 `json:"font_glow_alpha"`
+	FontYOffset         int     `json:"font_y_offset"`
 }
 
 type webTemplatePreviewResponse struct {
@@ -296,3 +297,9 @@ type webPageData struct {
 }
 
 type WebConfigUpdateRequest = webConfigUpdateRequest
+type WebActionRequest = webActionRequest
+type WebActionResponse = webActionResponse
+type WebActionStatusResponse = webActionStatusResponse
+type WebStateResponse = webStateResponse
+type WebTemplatePreviewRequest = webTemplatePreviewRequest
+type WebTemplatePreviewResponse = webTemplatePreviewResponse

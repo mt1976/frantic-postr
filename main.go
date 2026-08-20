@@ -38,6 +38,7 @@ import (
 	fcolor "github.com/fatih/color"
 	"github.com/mt1976/frantic-postr/app/core"
 	"github.com/mt1976/frantic-postr/app/reports"
+	"github.com/mt1976/frantic-postr/app/tui"
 	"github.com/mt1976/frantic-postr/app/web"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/image/font"
@@ -308,6 +309,7 @@ func loadVersionNo() string {
 func main() {
 	configPath := flag.String("config", "config/config.toml", "Path to config file")
 	webMode := flag.Bool("web", false, "Start the local web UI instead of an interactive CLI workflow")
+	tuiMode := flag.Bool("tui", false, "Start the terminal UI instead of an interactive CLI workflow")
 	webPort := flag.Int("port", 8080, "Port to bind the local web UI when using -web")
 	noColor := flag.Bool("no-color", false, "Disable ANSI colors in terminal output")
 	quietMode := flag.Bool("quiet", false, "Hide server request logs from terminal output while still writing all logs to the file")
@@ -353,6 +355,9 @@ func main() {
 	translateOnlyMode := *translateMode && !*cleanMode
 	modeCount := 0
 	if *webMode {
+		modeCount++
+	}
+	if *tuiMode {
 		modeCount++
 	}
 	if *genPostersMode {
@@ -405,7 +410,7 @@ func main() {
 		return
 	}
 	if modeCount > 1 {
-		log.Fatal("invalid flags: use only one mode among -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -stats, -coll-export, -coll-import, -backup, -restore, -rollback, -clone, -label, -coll-inject, -clean, -translate")
+		log.Fatal("invalid flags: use only one mode among -web, -tui, -gen-posters, -coll-dupes, -coll-delete-non-smart, -coll-path-clean, -stats, -coll-export, -coll-import, -backup, -restore, -rollback, -clone, -label, -coll-inject, -clean, -translate")
 	}
 	if *translateMode && (*cloneLibraryMode || *collExport || importMode || *backupMode || *restoreMode || *rollbackMode || *labelMode || *collInject || *genPostersMode || *collDupes || *deleteNonSmart || *pathCleanMode || *statsMode) {
 		log.Fatal("invalid flags: -translate can only be used by itself or together with -clean")
@@ -440,13 +445,19 @@ func main() {
 
 	logger.Printf("%s", styleBright(fmt.Sprintf("\n========================================\n  frantic-postr VERSION %s\n========================================", loadVersionNo())))
 	logger.Printf("startup: frantic-postr config=%s", *configPath)
-	logger.Printf("config: web=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t missing_posters_only=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *webPort, *noColor, *quietMode, core.TrailModeEnabled, *uploadPosters, *genPostersMode, *missingPostersOnlyMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
+	logger.Printf("config: web=%t tui=%t port=%d no_color=%t quiet=%t trail=%t upload_posters=%t gen_posters=%t missing_posters_only=%t label_types=%t coll_dupes=%t coll_delete_non_smart=%t coll_path_clean=%t stats=%t clone=%t label=%t coll_inject=%t update_category=%t only_category=%t clean=%t translate=%t coll_export=%t coll_import=%t backup=%t restore=%t rollback=%t coll_file=%s restore_file=%s", *webMode, *tuiMode, *webPort, *noColor, *quietMode, core.TrailModeEnabled, *uploadPosters, *genPostersMode, *missingPostersOnlyMode, *labelTypeCollectionItemsMode, *collDupes, *deleteNonSmart, *pathCleanMode, *statsMode, *cloneLibraryMode, *labelMode, *collInject, *updateCategoryMode, *onlyCategoryMode, *cleanMode, *translateMode, *collExport, importMode, *backupMode, *restoreMode, *rollbackMode, resolvedCollFile, strings.TrimSpace(*restoreFile))
 	if *webMode {
 		if *webPort <= 0 || *webPort > 65535 {
 			logger.Fatalf("invalid flags: -port must be between 1 and 65535")
 		}
 		if err := startWebServer(*configPath, *webPort, logger); err != nil {
 			logger.Fatalf("web UI failed: %v", err)
+		}
+		return
+	}
+	if *tuiMode {
+		if err := tui.Start(*configPath, logger); err != nil {
+			logger.Fatalf("terminal UI failed: %v", err)
 		}
 		return
 	}
